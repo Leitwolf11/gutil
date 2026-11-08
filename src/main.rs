@@ -13,12 +13,9 @@ fn main() -> ExitCode {
     let mut output = BufWriter::new(stdout.lock());
     let mut errors = io::stderr().lock();
 
-    let result = run(
-        env::args_os().skip(1),
-        stdout.is_terminal(),
-        &mut output,
-        &mut errors,
-    );
+    // Discard argv[0] and preserve non-UTF-8 filesystem operands.
+    let args = env::args_os().skip(1); // nosemgrep: args-os, rust.lang.security.args-os.args-os
+    let result = run(args, stdout.is_terminal(), &mut output, &mut errors);
 
     match result.and_then(|status| output.flush().map(|()| status)) {
         Ok(status) => ExitCode::from(status),
