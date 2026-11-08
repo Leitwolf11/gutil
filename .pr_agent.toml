@@ -1,0 +1,5 @@
+[github_app]
+pr_commands = ["/agentic_review"]
+
+[review_agent]
+issues_user_guidelines = "Check GNU coreutils compatibility, platform-specific filesystem behavior, error handling, and unsupported performance claims."

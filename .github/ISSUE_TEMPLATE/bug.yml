@@ -1,0 +1,25 @@
+name: Bug report
+description: Report incorrect behavior in gutil.
+title: "[Bug] "
+body:
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the exact command, input, and relevant filesystem setup.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: Include output, exit status, and the GNU coreutils result if available.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include your operating system, architecture, and gutil version.
+    validations:
+      required: true

@@ -1,0 +1,16 @@
+name: Feature request
+description: Request a command, option, or compatibility improvement.
+title: "[Feature] "
+body:
+  - type: textarea
+    id: request
+    attributes:
+      label: Requested behavior
+      description: Describe the workflow and show an example invocation.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: GNU coreutils behavior
+      description: Include the expected output, exit status, or known platform differences.
