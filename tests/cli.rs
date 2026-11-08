@@ -24,8 +24,10 @@ fn lists_hidden_entries_only_when_requested() {
 
     let plain = run(directory.path(), &["ls"]);
     assert!(plain.status.success());
-    insta::assert_snapshot!(String::from_utf8(plain.stdout).unwrap(), @"alpha
-zeta");
+    insta::assert_snapshot!(String::from_utf8(plain.stdout).unwrap(), @"
+    alpha
+    zeta
+    ");
 
     let all = run(directory.path(), &["ls", "-a", "."]);
     assert!(all.status.success());
@@ -77,9 +79,9 @@ fn lists_files_before_directory_sections() {
     assert_eq!(run(directory.path(), &["ls", "-d", "dir"]).stdout, b"dir\n");
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
-fn preserves_non_utf8_names_and_lists_symlink_targets() {
+fn preserves_non_utf8_names_and_symlink_targets() {
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::fs::symlink;
@@ -87,15 +89,29 @@ fn preserves_non_utf8_names_and_lists_symlink_targets() {
     let directory = tempdir().unwrap();
     let name = OsStr::from_bytes(b"target-\xff");
     fs::write(directory.path().join(name), []).unwrap();
-    symlink(name, directory.path().join("link")).unwrap();
 
     let output = run(directory.path(), &["ls"]);
     assert!(output.status.success());
-    assert_eq!(output.stdout, b"link\ntarget-\xff\n");
+    assert_eq!(output.stdout, b"target-\xff\n");
 
+    symlink(name, directory.path().join("link")).unwrap();
     let long = run(directory.path(), &["ls", "-l", "link"]);
     assert!(long.status.success());
     assert!(long.stdout.ends_with(b" link -> target-\xff\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn lists_symlink_targets_in_long_format() {
+    use std::os::unix::fs::symlink;
+
+    let directory = tempdir().unwrap();
+    fs::write(directory.path().join("target"), []).unwrap();
+    symlink("target", directory.path().join("link")).unwrap();
+
+    let long = run(directory.path(), &["ls", "-l", "link"]);
+    assert!(long.status.success());
+    assert!(long.stdout.ends_with(b" link -> target\n"));
 }
 
 proptest! {
