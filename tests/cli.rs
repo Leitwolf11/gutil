@@ -79,6 +79,59 @@ fn lists_files_before_directory_sections() {
     assert_eq!(run(directory.path(), &["ls", "-d", "dir"]).stdout, b"dir\n");
 }
 
+#[test]
+fn job_options_preserve_listing_order_and_output() {
+    let directory = tempdir().unwrap();
+    let listing = directory.path().join("listing");
+    fs::create_dir(&listing).unwrap();
+    for index in (0..64).rev() {
+        fs::write(listing.join(format!("file-{index:02}")), []).unwrap();
+    }
+
+    let serial = run(&listing, &["-j", "1", "ls", "-la"]);
+    assert!(serial.status.success());
+    let serial = String::from_utf8(serial.stdout).unwrap();
+    for args in [
+        &["--threads", "3", "ls", "-la"][..],
+        &["--jobs=4", "ls", "-la"],
+        &["ls", "-la", "--jobs", "2"],
+        &["ls", "-la", "--threads=2"],
+        &["ls", "-la", "-j4"],
+        &["ls", "-laj4"],
+    ] {
+        let concurrent = run(&listing, args);
+        assert!(
+            concurrent.status.success(),
+            "{args:?}: {:?}",
+            concurrent.stderr
+        );
+        assert_eq!(
+            String::from_utf8(concurrent.stdout).unwrap(),
+            serial,
+            "{args:?}"
+        );
+    }
+}
+
+#[test]
+fn rejects_missing_or_invalid_job_counts() {
+    let directory = tempdir().unwrap();
+    for args in [
+        &["-j"][..],
+        &["--jobs=0", "ls"],
+        &["--threads", "-1", "ls"],
+        &["ls", "-j"],
+        &["ls", "--jobs="],
+        &["ls", "--threads", "many"],
+    ] {
+        let output = run(directory.path(), args);
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert_eq!(output.stdout, b"");
+        assert!(String::from_utf8_lossy(&output.stderr)
+            .contains("job count must be a positive integer"));
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn preserves_non_utf8_names_and_symlink_targets() {

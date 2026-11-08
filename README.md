@@ -7,9 +7,12 @@ gutil is a Rust 2021 project to reimplement GNU coreutils as a single executable
 ```sh
 cargo install --path . --locked
 gutil ls -la .
+gutil --jobs 4 ls -la .
 ```
 
 `ls` supports `-a` (`--all`), `-A` (`--almost-all`), `-d` (`--directory`), `-l`, `-1`, and `--`. It accepts multiple file and directory operands and defaults to the current directory. It sorts by the native filename representation and emits one entry per line. Long output uses UTC timestamps and numeric Unix owner and group IDs. On Windows, long output reports basic read-only information and marks unavailable ownership fields with `-`. Hidden entries are identified by a leading dot on all platforms.
+
+Filesystem work runs on a Tokio blocking pool. Use `-j N`, `--jobs N`, or `--threads N` before or after the command name to limit concurrent jobs. The default is the detected parallelism, capped at eight. A job count of one processes filesystem work serially. Requests above 512 use 512 as the limit. Concurrent execution preserves the listing order.
 
 ## Development
 
