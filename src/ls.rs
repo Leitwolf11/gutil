@@ -5,23 +5,25 @@ use std::path::{Path, PathBuf};
 
 use smallvec::SmallVec;
 
+use crate::jobs;
+
 mod long;
 
-const HELP: &str = "Usage: gutil ls [OPTION]... [FILE]...\n\nList information about files (the current directory by default).\n\n  -a, --all          Include entries beginning with .\n  -A, --almost-all   Include hidden entries except . and ..\n  -d, --directory    List directory operands themselves\n  -l                 Use long format\n  -1                 Use one entry per line\n      --help         Print help\n      --version      Print version\n";
+const HELP: &str = "Usage: gutil ls [OPTION]... [FILE]...\n\nList information about files (the current directory by default).\n\n  -a, --all          Include entries beginning with .\n  -A, --almost-all   Include hidden entries except . and ..\n  -d, --directory    List directory operands themselves\n  -l                 Use long format\n  -1                 Use one entry per line\n  -j, --jobs, --threads N  Limit concurrent filesystem jobs\n      --help         Print help\n      --version      Print version\n";
 
-#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Hidden {
-    #[default]
     Omit,
     AlmostAll,
     All,
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy)]
 struct Options {
     hidden: Hidden,
     directory: bool,
     long: bool,
+    job_count: usize,
 }
 
 enum Request {
@@ -31,14 +33,32 @@ enum Request {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("unrecognized option {0:?}")]
-struct InvalidOption(OsString);
+enum ParseError {
+    #[error("unrecognized option {0:?}")]
+    InvalidOption(OsString),
+    #[error(transparent)]
+    InvalidJobs(#[from] jobs::InvalidCount),
+}
 
-fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Request, InvalidOption> {
-    let mut options = Options::default();
+fn parse(
+    mut args: impl Iterator<Item = OsString>,
+    job_count: usize,
+) -> Result<Request, ParseError> {
+    let mut options = Options {
+        hidden: Hidden::Omit,
+        directory: false,
+        long: false,
+        job_count,
+    };
     let mut paths = SmallVec::new();
     let mut parse_options = true;
-    for arg in args {
+    while let Some(arg) = args.next() {
+        if parse_options {
+            if let Some(count) = jobs::option(arg.as_encoded_bytes(), &mut args) {
+                options.job_count = count?;
+                continue;
+            }
+        }
         match arg.as_encoded_bytes() {
             b"--" if parse_options => parse_options = false,
             b"--help" if parse_options => return Ok(Request::Help),
@@ -48,16 +68,20 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Request, InvalidOpt
                 options.hidden = options.hidden.max(Hidden::AlmostAll);
             }
             b"--directory" if parse_options => options.directory = true,
-            [b'-', b'-', ..] if parse_options => return Err(InvalidOption(arg)),
+            [b'-', b'-', ..] if parse_options => return Err(ParseError::InvalidOption(arg)),
             [b'-', flags @ ..] if parse_options && !flags.is_empty() => {
-                for flag in flags {
+                for (index, flag) in flags.iter().enumerate() {
                     match flag {
                         b'a' => options.hidden = Hidden::All,
                         b'A' => options.hidden = options.hidden.max(Hidden::AlmostAll),
                         b'd' => options.directory = true,
                         b'l' => options.long = true,
                         b'1' => {}
-                        _ => return Err(InvalidOption(arg)),
+                        b'j' => {
+                            options.job_count = jobs::short_value(&flags[index + 1..], &mut args)?;
+                            break;
+                        }
+                        _ => return Err(ParseError::InvalidOption(arg)),
                     }
                 }
             }
@@ -71,12 +95,13 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Request, InvalidOpt
 }
 
 pub(super) fn run(
-    args: impl IntoIterator<Item = OsString>,
+    args: impl Iterator<Item = OsString>,
+    job_count: usize,
     terminal: bool,
     output: &mut impl Write,
     errors: &mut impl Write,
 ) -> io::Result<u8> {
-    let (options, mut paths) = match parse(args) {
+    let (options, paths) = match parse(args, job_count) {
         Ok(Request::Help) => return output.write_all(HELP.as_bytes()).map(|()| 0),
         Ok(Request::Version) => {
             return writeln!(output, "gutil ls {}", env!("CARGO_PKG_VERSION")).map(|()| 0);
@@ -91,6 +116,19 @@ pub(super) fn run(
         }
     };
 
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .max_blocking_threads(options.job_count)
+        .build()?;
+    runtime.block_on(list(options, paths, terminal, output, errors))
+}
+
+async fn list(
+    options: Options,
+    mut paths: SmallVec<[PathBuf; 4]>,
+    terminal: bool,
+    output: &mut impl Write,
+    errors: &mut impl Write,
+) -> io::Result<u8> {
     let headers = paths.len() > 1;
     paths.sort_unstable();
     let mut listing = Listing {
@@ -102,13 +140,16 @@ pub(super) fn run(
     };
     let mut directories = SmallVec::<[PathBuf; 4]>::new();
     let mut wrote_section = false;
-    for path in paths {
-        match fs::symlink_metadata(&path) {
-            Ok(metadata) if listing.is_directory_operand(&path, &metadata) => {
-                directories.push(path);
-            }
-            Ok(metadata) => {
-                listing.write_entry(&path, path.as_os_str(), &metadata)?;
+    let operands = jobs::map(paths.into_vec(), options.job_count, move |path| {
+        let entry = read_operand(&path, options);
+        (path, entry)
+    })
+    .await?;
+    for (path, entry) in operands {
+        match entry {
+            Ok(None) => directories.push(path),
+            Ok(Some(entry)) => {
+                listing.write_entry(&path, path.as_os_str(), &entry)?;
                 wrote_section = true;
             }
             Err(error) => listing.report(&path, &error, 2)?,
@@ -116,8 +157,12 @@ pub(super) fn run(
     }
 
     for path in directories {
-        match fs::read_dir(&path) {
-            Ok(entries) => {
+        let directory = path.clone();
+        let entries = tokio::task::spawn_blocking(move || read_names(&directory, options.hidden))
+            .await
+            .map_err(io::Error::other)?;
+        match entries {
+            Ok((names, errors)) => {
                 if wrote_section {
                     writeln!(listing.output)?;
                 }
@@ -125,13 +170,59 @@ pub(super) fn run(
                     write_name(listing.output, path.as_os_str(), terminal)?;
                     writeln!(listing.output, ":")?;
                 }
-                listing.write_directory(&path, entries)?;
+                for error in errors {
+                    listing.report(&path, &error, 1)?;
+                }
+                listing.write_directory(&path, names).await?;
                 wrote_section = true;
             }
             Err(error) => listing.report(&path, &error, 2)?,
         }
     }
     Ok(listing.status)
+}
+
+fn read_operand(path: &Path, options: Options) -> io::Result<Option<Entry>> {
+    let metadata = fs::symlink_metadata(path)?;
+    let is_directory = !options.directory
+        && (metadata.is_dir()
+            || (!options.long
+                && metadata.is_symlink()
+                && fs::metadata(path).is_ok_and(|target| target.is_dir())));
+    Ok((!is_directory).then(|| Entry::new(path, metadata, options.long)))
+}
+
+fn read_names(directory: &Path, hidden: Hidden) -> io::Result<(Vec<OsString>, Vec<io::Error>)> {
+    let mut names = Vec::new();
+    let mut errors = Vec::new();
+    if hidden == Hidden::All {
+        names.extend([OsString::from("."), OsString::from("..")]);
+    }
+    for entry in fs::read_dir(directory)? {
+        match entry {
+            Ok(entry) => {
+                let name = entry.file_name();
+                if hidden != Hidden::Omit || !name.as_encoded_bytes().starts_with(b".") {
+                    names.push(name);
+                }
+            }
+            Err(error) => errors.push(error),
+        }
+    }
+    names.sort_unstable();
+    Ok((names, errors))
+}
+
+struct Entry {
+    metadata: Metadata,
+    target: Option<io::Result<PathBuf>>,
+}
+
+impl Entry {
+    fn new(path: &Path, metadata: Metadata, long: bool) -> Self {
+        let target = (long && metadata.is_symlink()).then(|| fs::read_link(path));
+        Self { metadata, target }
+    }
 }
 
 struct Listing<'a, O, E> {
@@ -143,52 +234,36 @@ struct Listing<'a, O, E> {
 }
 
 impl<O: Write, E: Write> Listing<'_, O, E> {
-    fn is_directory_operand(&self, path: &Path, metadata: &Metadata) -> bool {
-        !self.options.directory
-            && (metadata.is_dir()
-                || (!self.options.long
-                    && metadata.is_symlink()
-                    && fs::metadata(path).is_ok_and(|target| target.is_dir())))
-    }
-
     #[allow(clippy::unnecessary_debug_formatting)] // Escape control characters in paths.
     fn report(&mut self, path: &Path, error: &io::Error, status: u8) -> io::Result<()> {
         self.status = self.status.max(status);
         writeln!(self.errors, "gutil ls: {path:?}: {error}")
     }
 
-    fn write_directory(&mut self, directory: &Path, entries: fs::ReadDir) -> io::Result<()> {
-        let mut names = Vec::new();
-        if self.options.hidden == Hidden::All {
-            names.extend([OsString::from("."), OsString::from("..")]);
-        }
-        for entry in entries {
-            match entry {
-                Ok(entry) => {
-                    let name = entry.file_name();
-                    if self.options.hidden != Hidden::Omit
-                        || !name.as_encoded_bytes().starts_with(b".")
-                    {
-                        names.push(name);
-                    }
-                }
-                Err(error) => self.report(directory, &error, 1)?,
-            }
-        }
-        names.sort_unstable();
-
+    async fn write_directory(&mut self, directory: &Path, names: Vec<OsString>) -> io::Result<()> {
         if self.options.long {
-            let mut entries = Vec::with_capacity(names.len());
-            for name in names {
-                let path = directory.join(&name);
-                match fs::symlink_metadata(&path) {
-                    Ok(metadata) => entries.push((name, metadata)),
+            let root = directory.to_path_buf();
+            let entries = jobs::map(names, self.options.job_count, move |name| {
+                let path = root.join(&name);
+                let entry =
+                    fs::symlink_metadata(&path).map(|metadata| Entry::new(&path, metadata, true));
+                (name, path, entry)
+            })
+            .await?;
+
+            let mut successful = Vec::with_capacity(entries.len());
+            for (name, path, entry) in entries {
+                match entry {
+                    Ok(entry) => successful.push((name, path, entry)),
                     Err(error) => self.report(&path, &error, 1)?,
                 }
             }
-            long::write_total(self.output, entries.iter().map(|(_, metadata)| metadata))?;
-            for (name, metadata) in entries {
-                self.write_entry(&directory.join(&name), &name, &metadata)?;
+            long::write_total(
+                self.output,
+                successful.iter().map(|(_, _, entry)| &entry.metadata),
+            )?;
+            for (name, path, entry) in successful {
+                self.write_entry(&path, &name, &entry)?;
             }
         } else {
             for name in names {
@@ -199,21 +274,18 @@ impl<O: Write, E: Write> Listing<'_, O, E> {
         Ok(())
     }
 
-    fn write_entry(&mut self, path: &Path, name: &OsStr, metadata: &Metadata) -> io::Result<()> {
+    fn write_entry(&mut self, path: &Path, name: &OsStr, entry: &Entry) -> io::Result<()> {
         if self.options.long {
-            long::write_metadata(self.output, metadata)?;
-            write_name(self.output, name, self.terminal)?;
-            if metadata.is_symlink() {
-                match fs::read_link(path) {
-                    Ok(target) => {
-                        self.output.write_all(b" -> ")?;
-                        write_name(self.output, target.as_os_str(), self.terminal)?;
-                    }
-                    Err(error) => self.report(path, &error, 1)?,
-                }
+            long::write_metadata(self.output, &entry.metadata)?;
+        }
+        write_name(self.output, name, self.terminal)?;
+        match &entry.target {
+            Some(Ok(target)) => {
+                self.output.write_all(b" -> ")?;
+                write_name(self.output, target.as_os_str(), self.terminal)?;
             }
-        } else {
-            write_name(self.output, name, self.terminal)?;
+            Some(Err(error)) => self.report(path, error, 1)?,
+            None => {}
         }
         writeln!(self.output)
     }
