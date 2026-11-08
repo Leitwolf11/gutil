@@ -39,7 +39,13 @@ fn run(mut args: impl Iterator<Item = std::ffi::OsString>) -> io::Result<u8> {
     };
     let command = command.as_deref().and_then(OsStr::to_str);
     if command == Some("cat") {
-        return cat::run(args, job_count);
+        return match cat::run(args, job_count) {
+            Err(error) if error.kind() == io::ErrorKind::BrokenPipe => {
+                writeln!(io::stderr(), "gutil cat: {error}")?;
+                Ok(1)
+            }
+            result => result,
+        };
     }
 
     let stdout = io::stdout();

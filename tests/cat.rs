@@ -92,3 +92,71 @@ fn rejects_the_same_regular_file_as_input_and_output() {
     assert!(String::from_utf8_lossy(&result.stderr).contains("input file is output file"));
     assert_eq!(fs::read(path).unwrap(), b"original");
 }
+
+#[test]
+fn exposes_command_help_and_version() {
+    let directory = tempfile::tempdir().unwrap();
+    let help = run(directory.path(), &["cat", "--help"], b"");
+    assert!(help.status.success());
+    assert!(help.stdout.starts_with(b"Usage: gutil cat "));
+    assert!(String::from_utf8_lossy(&help.stdout).contains("--show-nonprinting"));
+
+    let version = run(directory.path(), &["cat", "--version"], b"");
+    assert!(version.status.success());
+    assert_eq!(
+        version.stdout,
+        format!("gutil cat {}\n", env!("CARGO_PKG_VERSION")).as_bytes()
+    );
+}
+
+#[test]
+fn handles_combined_and_long_formatting_options() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = b"\t\x00\r\n\n\nend\r";
+    let output = run(
+        directory.path(),
+        &[
+            "cat",
+            "--show-nonprinting",
+            "--show-tabs",
+            "--show-ends",
+            "--number",
+            "--squeeze-blank",
+            "-uj2",
+        ],
+        input,
+    );
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"     1\t^I^@^M$\n     2\t$\n     3\tend^M");
+    assert_eq!(
+        run(directory.path(), &["cat", "-e"], b"\x00\n").stdout,
+        b"^@$\n"
+    );
+    assert_eq!(
+        run(directory.path(), &["cat", "-t"], b"\t\x00\n").stdout,
+        b"^I^@\n"
+    );
+    assert_eq!(
+        run(directory.path(), &["cat", "-E"], b"end\r").stdout,
+        b"end\r"
+    );
+    assert_eq!(
+        run(directory.path(), &["cat", "-z"], b"").status.code(),
+        Some(1)
+    );
+}
+
+#[test]
+fn reports_a_closed_output_pipe() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("large"), vec![b'x'; 2 * 1024 * 1024]).unwrap();
+    let mut process = command(directory.path(), &["cat", "large"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(process.stdout.take());
+    let output = process.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.starts_with(b"gutil cat:"));
+}

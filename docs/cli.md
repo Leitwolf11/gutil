@@ -66,4 +66,4 @@ gutil cat --number -- report.txt
 
 `cat` uses one filesystem job to preserve stream order. Without formatting options, files and redirected streams are copied byte for byte. Windows console streams use the platform's UTF-8 handling.
 
-`cat` exits with status `0` on success and `1` on command or I/O errors. It reports input errors and continues with subsequent operands. It rejects a regular input file that is also the output file.
+`cat` exits with status `0` on success and `1` on command or I/O errors. A closed output pipe is reported as an I/O error. It reports input errors and continues with subsequent operands. It rejects a regular input file that is also the output file.
