@@ -3,6 +3,8 @@ use std::io;
 use std::num::NonZeroUsize;
 use std::thread;
 
+const MAX_WORKERS: usize = 512;
+
 #[derive(Debug, thiserror::Error)]
 #[error("job count must be a positive integer")]
 pub(crate) struct InvalidCount;
@@ -47,7 +49,7 @@ fn read_count(
     let value = std::str::from_utf8(value).map_err(|_| InvalidCount)?;
     value
         .parse::<NonZeroUsize>()
-        .map(NonZeroUsize::get)
+        .map(|value| value.get().min(MAX_WORKERS))
         .map_err(|_| InvalidCount)
 }
 
@@ -61,13 +63,16 @@ where
         return Ok(Vec::new());
     }
 
-    // Batch cheap filesystem calls and retain the original input order.
-    let chunk_size = inputs.len().div_ceil(count).max(16);
+    // Start at most one batch per worker, including for small input sets.
+    let batch_count = count.min(inputs.len());
+    let batch_size = inputs.len() / batch_count;
+    let larger_batches = inputs.len() % batch_count;
     let mut output = Vec::with_capacity(inputs.len());
     let mut inputs = inputs.into_iter();
-    let mut pending = Vec::new();
-    while inputs.len() > 0 {
-        let batch: Vec<_> = inputs.by_ref().take(chunk_size).collect();
+    let mut pending = Vec::with_capacity(batch_count);
+    for index in 0..batch_count {
+        let size = batch_size + usize::from(index < larger_batches);
+        let batch: Vec<_> = inputs.by_ref().take(size).collect();
         let work = work.clone();
         pending.push(tokio::task::spawn_blocking(move || {
             batch.into_iter().map(work).collect::<Vec<_>>()
@@ -77,4 +82,35 @@ where
         output.extend(task.await.map_err(io::Error::other)?);
     }
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use parking_lot::{Condvar, Mutex};
+
+    use super::map;
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn small_batch_uses_available_workers_in_input_order() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(4)
+            .build()
+            .unwrap();
+        let rendezvous = Arc::new((Mutex::new(0), Condvar::new()));
+
+        let result = runtime.block_on(map(vec![0, 1, 2, 3], 4, move |value| {
+            let (started, ready) = &*rendezvous;
+            let mut started = started.lock();
+            *started += 1;
+            ready.notify_all();
+            ready.wait_while_for(&mut started, |count| *count < 4, Duration::from_secs(5));
+            (value, *started)
+        }));
+
+        assert_eq!(result.unwrap(), [(0, 4), (1, 4), (2, 4), (3, 4)]);
+    }
 }
