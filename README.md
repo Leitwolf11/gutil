@@ -29,7 +29,7 @@ The Criterion benchmark runs short and long listings against a 1,000-file fixtur
 GNU_LS=/usr/bin/ls cargo bench --locked --bench ls
 ```
 
-GitHub Actions runs the Rust checks on Linux, macOS, and Windows and saves an LCOV report. Add `CODECOV_TOKEN` and `CODACY_PROJECT_TOKEN` as Actions secrets after connecting the repository to those services. Connect the Qodo GitHub App to enable pull request reviews configured in `.pr_agent.toml`.
+GitHub Actions runs the Rust checks on Linux, macOS, and Windows and saves an LCOV report. Add `CODECOV_TOKEN` and `CODACY_PROJECT_TOKEN` as Actions secrets after connecting the repository to those services. Qodo reviews pull requests using the configuration in `.pr_agent.toml`.
 
 ## License
 

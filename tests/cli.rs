@@ -81,9 +81,10 @@ fn lists_files_before_directory_sections() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn preserves_non_utf8_names() {
+fn preserves_non_utf8_names_and_symlink_targets() {
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::symlink;
 
     let directory = tempdir().unwrap();
     let name = OsStr::from_bytes(b"target-\xff");
@@ -92,6 +93,11 @@ fn preserves_non_utf8_names() {
     let output = run(directory.path(), &["ls"]);
     assert!(output.status.success());
     assert_eq!(output.stdout, b"target-\xff\n");
+
+    symlink(name, directory.path().join("link")).unwrap();
+    let long = run(directory.path(), &["ls", "-l", "link"]);
+    assert!(long.status.success());
+    assert!(long.stdout.ends_with(b" link -> target-\xff\n"));
 }
 
 #[cfg(unix)]
