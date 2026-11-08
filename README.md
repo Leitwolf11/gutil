@@ -14,6 +14,11 @@ gutil --jobs 4 ls -la .
 
 Filesystem work runs on a Tokio blocking pool. Use `-j N`, `--jobs N`, or `--threads N` before or after the command name to limit concurrent jobs. The default is the detected parallelism, capped at eight. A job count of one processes filesystem work serially. Requests above 512 use 512 as the limit. Concurrent execution preserves the listing order.
 
+## Documentation
+
+- [Command-line reference](docs/cli.md)
+- [Benchmark methodology and results](docs/benchmarking.md)
+
 ## Development
 
 ```sh
