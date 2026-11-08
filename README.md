@@ -1,6 +1,6 @@
 # gutil
 
-gutil is a Rust 2021 project to reimplement GNU coreutils as a single executable for Linux, macOS, and Windows. GNU compatibility and lower runtime are project goals. The current release implements a subset of `ls`.
+gutil is a Rust 2021 project to reimplement GNU coreutils as a single executable for Linux, macOS, and Windows. GNU compatibility and lower runtime are project goals. gutil includes `ls` for directory listings and `cat` for concatenating files and standard input.
 
 ## Build and run
 
@@ -8,6 +8,7 @@ gutil is a Rust 2021 project to reimplement GNU coreutils as a single executable
 cargo install --path . --locked
 gutil ls -la .
 gutil --jobs 4 ls -la .
+gutil cat -n README.md
 ```
 
 `ls` supports `-a` (`--all`), `-A` (`--almost-all`), `-d` (`--directory`), `-l`, `-1`, and `--`. It accepts multiple file and directory operands and defaults to the current directory. It sorts by the native filename representation and emits one entry per line. Long output uses UTC timestamps and numeric Unix owner and group IDs. On Windows, long output reports basic read-only information and marks unavailable ownership fields with `-`. Hidden entries are identified by a leading dot on all platforms.

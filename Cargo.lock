@@ -459,7 +459,7 @@ dependencies = [
 
 [[package]]
 name = "gutil"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ariadne",
  "criterion",
@@ -469,6 +469,7 @@ dependencies = [
  "proptest",
  "rustc-hash",
  "rusty-rich",
+ "same-file",
  "smallvec",
  "tempfile",
  "thiserror",
