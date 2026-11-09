@@ -1,13 +1,14 @@
 mod cat;
 mod jobs;
 mod ls;
+mod pwd;
 
 use std::env;
 use std::ffi::OsStr;
 use std::io::{self, BufWriter, IsTerminal, Write};
 use std::process::ExitCode;
 
-const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  cat  Concatenate files\n  ls   List directory contents\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N  Limit concurrent filesystem jobs\n";
+const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  cat  Concatenate files\n  ls   List directory contents\n  pwd  Print the working directory\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N  Limit concurrent filesystem jobs\n";
 
 fn main() -> ExitCode {
     // Discard argv[0] and preserve non-UTF-8 filesystem operands.
@@ -59,6 +60,7 @@ fn run(mut args: impl Iterator<Item = std::ffi::OsString>) -> io::Result<u8> {
             &mut output,
             &mut errors,
         ),
+        Some("pwd") => pwd::run(args, job_count, &mut output, &mut errors),
         Some("-h" | "--help") => output.write_all(HELP.as_bytes()).map(|()| 0),
         Some("-V" | "--version") => {
             writeln!(output, "gutil {}", env!("CARGO_PKG_VERSION")).map(|()| 0)

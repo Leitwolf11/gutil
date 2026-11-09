@@ -7,10 +7,11 @@ gutil --help
 gutil --version
 gutil ls --help
 gutil cat --help
+gutil pwd --help
 gutil ls -la .
 ```
 
-`gutil --help` lists the available subcommands and global options. Use `gutil ls --help` or `gutil cat --help` for command-specific syntax and options.
+`gutil --help` lists the available subcommands and global options. Use `gutil <COMMAND> --help` for command-specific syntax and options.
 
 ## Filesystem jobs
 
@@ -67,3 +68,16 @@ gutil cat --number -- report.txt
 `cat` uses one filesystem job to preserve stream order. Without formatting options, files and redirected streams are copied byte for byte. Windows console streams use the platform's UTF-8 handling.
 
 `cat` exits with status `0` on success and `1` on command or I/O errors. A closed output pipe is reported as an I/O error. It reports input errors and continues with subsequent operands. It rejects a regular input file that is also the output file.
+
+## pwd
+
+`gutil pwd [OPTION]...` prints the absolute path of the current working directory.
+
+| Option | Behavior |
+| --- | --- |
+| `-L`, `--logical` | Use `PWD` when it is an absolute path without `.` or `..` components and identifies the current directory. Otherwise use the physical path. |
+| `-P`, `--physical` | Resolve symbolic links in the working directory path. |
+
+The last mode option takes precedence. Physical mode is the default. Setting `POSIXLY_CORRECT` selects logical mode by default. In physical mode, Windows uses the platform's canonical path syntax, which can include an extended-length prefix.
+
+`pwd` uses one filesystem job. It exits with status `0` after printing the path and `1` for an invalid option or a working directory it cannot resolve. Extra operands are ignored with a warning.
