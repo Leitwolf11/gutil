@@ -1,6 +1,6 @@
 [package]
 name = "gutil"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "A single-binary, cross-platform reimplementation of GNU coreutils"
 license = "LGPL-3.0-or-later"
