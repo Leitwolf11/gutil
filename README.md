@@ -2,6 +2,8 @@
 
 gutil is a Rust 2021 project to reimplement GNU coreutils as a single executable for Linux, macOS, and Windows. GNU compatibility and lower runtime are project goals. gutil includes `ls` for directory listings, `cat` for concatenating files and standard input, and `pwd` for printing the working directory.
 
+The name gutil has no expanded form.
+
 ## Build and run
 
 ```sh
