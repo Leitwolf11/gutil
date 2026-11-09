@@ -78,6 +78,6 @@ gutil cat --number -- report.txt
 | `-L`, `--logical` | Use `PWD` when it is an absolute path without `.` or `..` components and identifies the current directory. Otherwise use the physical path. |
 | `-P`, `--physical` | Resolve symbolic links in the working directory path. |
 
-The last mode option takes precedence. Physical mode is the default. Setting `POSIXLY_CORRECT` selects logical mode by default. In physical mode, Windows uses the platform's canonical path syntax, which can include an extended-length prefix.
+The last mode option takes precedence. Physical mode is the default. Setting `POSIXLY_CORRECT` selects logical mode by default. In physical mode, Windows uses the platform's canonical path syntax, which can include an extended-length prefix. Windows paths that cannot be represented as UTF-8 produce an error.
 
-`pwd` uses one filesystem job. It exits with status `0` after printing the path and `1` for an invalid option or a working directory it cannot resolve. Extra operands are ignored with a warning.
+`pwd` uses one filesystem job. It exits with status `0` after printing the path and `1` for invalid options, an unresolvable working directory, or failed output. Extra operands are ignored with a warning.

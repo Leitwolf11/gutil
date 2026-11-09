@@ -146,3 +146,37 @@ fn writes_non_utf8_directory_names_as_native_bytes() {
     assert!(output.status.success());
     assert_eq!(output.stdout, path_line(&fs::canonicalize(native).unwrap()));
 }
+
+#[test]
+fn reports_a_closed_output_pipe() {
+    let directory = tempfile::tempdir().unwrap();
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let output = Command::new(env!("CARGO_BIN_EXE_gutil"))
+        .args(["pwd", "-P"])
+        .current_dir(directory.path())
+        .stdout(writer)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.starts_with(b"gutil pwd:"));
+}
+
+#[cfg(windows)]
+#[test]
+fn rejects_directory_names_that_cannot_be_written_as_utf8() {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+
+    let directory = tempfile::tempdir().unwrap();
+    let native = directory
+        .path()
+        .join(OsString::from_wide(&[0x0078, 0xd800]));
+    fs::create_dir(&native).unwrap();
+    for flag in ["-L", "-P"] {
+        let output = run(&native, Some(native.as_os_str()), false, &[flag]);
+        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(output.stdout, b"");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("not valid UTF-8"));
+    }
+}

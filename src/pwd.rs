@@ -186,6 +186,12 @@ fn write_path(output: &mut impl Write, path: &Path) -> io::Result<()> {
     }
     #[cfg(not(unix))]
     {
-        output.write_all(path.to_string_lossy().as_bytes())
+        let path = path.to_str().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "working directory path is not valid UTF-8",
+            )
+        })?;
+        output.write_all(path.as_bytes())
     }
 }

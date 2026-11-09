@@ -67,5 +67,11 @@ fn run(mut args: impl Iterator<Item = std::ffi::OsString>) -> io::Result<u8> {
         }
         _ => writeln!(errors, "gutil: expected a command (see 'gutil --help')").map(|()| 2),
     };
-    result.and_then(|status| output.flush().map(|()| status))
+    match result.and_then(|status| output.flush().map(|()| status)) {
+        Err(error) if command == Some("pwd") => {
+            writeln!(errors, "gutil pwd: {error}")?;
+            Ok(1)
+        }
+        result => result,
+    }
 }
