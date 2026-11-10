@@ -1,4 +1,5 @@
 use std::env;
+use std::error::Error;
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::future::Future;
@@ -6,6 +7,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use reqwest::{Client, StatusCode, Url};
 use sha2::{Digest, Sha256};
 
@@ -17,16 +19,13 @@ const HELP: &str = "Usage: gutil cache [--offline] put [--] FILE\n       gutil c
 
 pub(crate) fn run(
     mut args: impl Iterator<Item = OsString>,
+    offline: bool,
     loaded: &config::Loaded,
     ui: Presentation,
     output: &mut impl Write,
     errors: &mut impl Write,
 ) -> io::Result<u8> {
-    let mut action = args.next();
-    let offline = action.as_deref().is_some_and(|value| value == "--offline");
-    if offline {
-        action = args.next();
-    }
+    let action = args.next();
     let action = action.as_deref().and_then(|value| value.to_str());
     match action {
         Some("-h" | "--help") => return output.write_all(HELP.as_bytes()).map(|()| 0),
@@ -227,7 +226,13 @@ fn store_file(directory: &Path, key: &str, bytes: &[u8]) -> io::Result<()> {
     fs::create_dir_all(directory)?;
     let mut temporary = tempfile::NamedTempFile::new_in(directory)?;
     temporary.write_all(bytes)?;
-    temporary.persist(directory.join(key))?;
+    let destination = directory.join(key);
+    if let Err(unpublished) = temporary.persist_noclobber(&destination) {
+        // Keep an identical entry published by another writer. Replace corrupt entries.
+        if !read_file(&destination, bytes.len()).is_ok_and(|existing| existing == bytes) {
+            unpublished.file.persist(&destination)?;
+        }
+    }
     Ok(())
 }
 
@@ -265,7 +270,6 @@ fn check_size(size: usize, limit: usize) -> io::Result<()> {
 
 struct Remote {
     client: Client,
-    token: Option<String>,
 }
 
 impl Remote {
@@ -273,28 +277,36 @@ impl Remote {
         let mut builder = Client::builder()
             .timeout(Duration::from_millis(timeout_ms))
             .redirect(reqwest::redirect::Policy::none());
-        let token = if url.scheme() == "https" {
+        if url.scheme() == "https" {
             match env::var("GUTIL_CACHE_TOKEN") {
-                Ok(value) => Some(value).filter(|value| !value.is_empty()),
-                Err(env::VarError::NotPresent) => None,
+                Ok(value) if !value.is_empty() => {
+                    let mut authorization = HeaderValue::from_str(&format!("Bearer {value}"))
+                        .map_err(|_| {
+                            io::Error::other("GUTIL_CACHE_TOKEN is not a valid HTTP credential")
+                        })?;
+                    authorization.set_sensitive(true);
+                    let mut headers = HeaderMap::new();
+                    headers.insert(AUTHORIZATION, authorization);
+                    builder = builder.default_headers(headers);
+                }
+                Ok(_) | Err(env::VarError::NotPresent) => {}
                 Err(env::VarError::NotUnicode(_)) => {
                     return Err(io::Error::other("GUTIL_CACHE_TOKEN must be valid Unicode"));
                 }
             }
         } else {
             builder = builder.no_proxy();
-            None
-        };
+        }
         url.path_segments_mut()
             .map_err(|()| io::Error::other("invalid remote cache endpoint path"))?
             .pop_if_empty()
             .extend(["sha256", key]);
         let client = builder.build().map_err(request_error)?;
-        Ok((Self { client, token }, url))
+        Ok((Self { client }, url))
     }
 
     async fn get(self, url: Url, key: &str, limit: usize) -> io::Result<Option<Vec<u8>>> {
-        let mut response = self.send(self.client.get(url)).await?;
+        let mut response = self.client.get(url).send().await.map_err(request_error)?;
         match response.status() {
             StatusCode::NOT_FOUND => return Ok(None),
             StatusCode::OK => {}
@@ -311,31 +323,34 @@ impl Remote {
     }
 
     async fn put(self, url: Url, bytes: Vec<u8>) -> io::Result<()> {
-        let request = self
+        let status = self
             .client
             .put(url)
-            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
-            .body(bytes);
-        let status = self.send(request).await?.status();
+            .header(CONTENT_TYPE, "application/octet-stream")
+            .body(bytes)
+            .send()
+            .await
+            .map_err(request_error)?
+            .status();
         if status.is_success() {
             Ok(())
         } else {
             Err(io::Error::other(format!("PUT returned HTTP {status}")))
         }
     }
-
-    async fn send(&self, mut request: reqwest::RequestBuilder) -> io::Result<reqwest::Response> {
-        if let Some(token) = &self.token {
-            request = request.bearer_auth(token);
-        }
-        request.send().await.map_err(request_error)
-    }
 }
 
 fn request_error(error: reqwest::Error) -> io::Error {
     if error.is_timeout() {
-        io::Error::new(io::ErrorKind::TimedOut, "HTTP request timed out")
-    } else {
-        io::Error::other(error.without_url())
+        return io::Error::new(io::ErrorKind::TimedOut, "HTTP request timed out");
     }
+    let error = error.without_url();
+    let mut message = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    io::Error::other(message)
 }

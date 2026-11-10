@@ -175,13 +175,32 @@ fn reports_usage_missing_entries_and_invalid_configuration() {
         let help = run(path, &["cache", "--help"]);
         success(&help);
         assert!(String::from_utf8_lossy(&help.stdout).contains("gutil cache"));
-        let version = run(path, &["cache", "--version"]);
+        let offline_help = run(path, &["cache", "--offline", "-h"]);
+        success(&offline_help);
+        assert_eq!(offline_help.stdout, help.stdout);
+        let version = run(path, &["cache", "--offline", "--version"]);
         success(&version);
         assert_eq!(
             version.stdout,
             format!("gutil {}\n", env!("CARGO_PKG_VERSION")).as_bytes()
         );
     }
+}
+
+#[test]
+fn reports_a_closed_output_pipe() {
+    let dir = tempdir().unwrap();
+    let path = dir.path();
+    fs::write(path.join("file"), BLOB).unwrap();
+    success(&run(path, &["cache", "put", "file"]));
+    let (reader, writer) = io::pipe().unwrap();
+    drop(reader);
+    let output = command(path, &["cache", "get", KEY])
+        .stdout(writer)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(errors(&output).starts_with("gutil cache:"));
 }
 
 fn server(dir: &Path, mode: &str, local_enabled: bool, extra: &str) -> TcpListener {
@@ -383,6 +402,7 @@ fn remote_cache_rejects_corruption_oversized_bodies_redirects_and_misses() {
     let path = dir.path();
     let listener = server(path, "read-only", true, "[cache]\nmax-entry-bytes = 5");
     let responses: &[(&[u8], &str)] = &[
+        (b"", "connection closed before message completed"),
         (b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n", "unavailable"),
         (b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nwrong", "does not match"),
         (b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nhello!", "5-byte cache limit"),

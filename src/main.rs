@@ -63,12 +63,8 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
     }
 
     // Direct help and version requests remain available when a config cannot load.
-    if matches!(command, Some("cache" | "cat" | "ls" | "pwd"))
-        && args
-            .peek()
-            .and_then(|arg| arg.to_str())
-            .is_some_and(|arg| matches!(arg, "--help" | "--version"))
-    {
+    let offline = command == Some("cache") && args.next_if(|arg| arg == "--offline").is_some();
+    if direct_help_or_version(command, args.peek().and_then(|arg| arg.to_str())) {
         options.source = Source::Disabled;
         options.profile = None;
     }
@@ -114,7 +110,7 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
     let mut output = BufWriter::new(stdout.lock());
     let mut errors = io::stderr().lock();
     let result = match command {
-        Some("cache") => cache::run(args, &loaded, ui, &mut output, &mut errors),
+        Some("cache") => cache::run(args, offline, &loaded, ui, &mut output, &mut errors),
         Some("ls") => ls::run(
             args,
             job_count,
@@ -133,7 +129,10 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
             .map(|()| 2),
     };
     match result.and_then(|status| output.flush().map(|()| status)) {
-        Err(error) if command == Some("pwd") || error.kind() != io::ErrorKind::BrokenPipe => {
+        Err(error)
+            if matches!(command, Some("cache" | "pwd"))
+                || error.kind() != io::ErrorKind::BrokenPipe =>
+        {
             let label = match command {
                 Some("cache") => "gutil cache",
                 Some("pwd") => "gutil pwd",
@@ -144,6 +143,12 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         }
         result => result,
     }
+}
+
+fn direct_help_or_version(command: Option<&str>, option: Option<&str>) -> bool {
+    matches!(command, Some("cache" | "cat" | "ls" | "pwd"))
+        && (matches!(option, Some("--help" | "--version"))
+            || (command == Some("cache") && option == Some("-h")))
 }
 
 impl GlobalOptions {
