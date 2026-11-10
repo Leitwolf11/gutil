@@ -64,3 +64,31 @@ The options `--layout=MODE`, `--hidden=MODE`, `--sort=MODE`, `--quote=MODE`, `--
 ### pwd
 
 `mode` accepts `"physical"` or `"logical"`. Physical is the built-in default.
+
+## Cache
+
+The `cache` command stores immutable blobs by SHA-256. Cache settings apply to explicit `cache put` and `cache get` calls. Profiles can override any of these settings.
+
+| Key | Values and behavior |
+| --- | --- |
+| `cache.max-entry-bytes` | Maximum bytes per entry, from 1 to 268435456. The default is 16777216 (16 MiB). The limit applies to local files and remote responses. |
+| `cache.local.enabled` | Whether to use the local cache. Defaults to true. |
+| `cache.local.directory` | Cache root. Relative paths are resolved against the configuration file's directory. Defaults to `~/.gutil/cache` on Linux and macOS and `%USERPROFILE%\.gutil\cache` on Windows. |
+| `cache.remote.mode` | `"off"`, `"read-only"`, or `"read-write"`. Defaults to `"off"`. |
+| `cache.remote.endpoint` | Base URL for the remote cache, required in read-only and read-write modes. Use HTTPS, or HTTP on loopback for local development. |
+| `cache.remote.timeout-ms` | Total timeout per HTTP request, including the response body, from 1 to 60000 milliseconds. Defaults to 3000. |
+
+A discovered home configuration can enable the remote cache. To enable remote access from a project configuration, select it explicitly with `gutil --config ./gutil.toml cache …`. Use `cache --offline` to disable network access for a single call. The optional `GUTIL_CACHE_TOKEN` environment variable is sent as a Bearer token over HTTPS. The client sends neither tokens over HTTP nor requests to redirect targets.
+
+A local hit avoids a network request. A verified remote hit fills or repairs the local entry when the local cache is enabled. A put succeeds if at least one writable cache stores the entry. Backend failures appear as warnings on stderr. Local entries are written atomically and can be removed from the cache directory to reclaim space.
+
+### Remote HTTP protocol
+
+Configure a service that handles these requests at the base URL, such as `https://cache.example.com/team/builds`. Use separate base paths for separate cache namespaces.
+
+| Request | Service response |
+| --- | --- |
+| `GET /team/builds/sha256/<digest>` | Return `200 OK` with the raw bytes or `404 Not Found` for a miss. |
+| `PUT /team/builds/sha256/<digest>` | Store the `application/octet-stream` body and return a `2xx` response. Treat repeated puts of the same digest as idempotent. |
+
+Digests in requests are lowercase hexadecimal. gutil checks the size and SHA-256 digest before returning any fetched bytes.
