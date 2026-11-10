@@ -83,3 +83,17 @@ gutil cat --number -- report.txt
 The last mode option takes precedence. Physical mode is the built-in default. Setting `POSIXLY_CORRECT` selects logical mode by default. In physical mode, Windows uses the platform's canonical path syntax, which can include an extended-length prefix. Windows paths that cannot be represented as UTF-8 produce an error.
 
 `pwd` uses one filesystem job. It exits with status `0` after printing the path and `1` for invalid options, an unresolvable working directory, or failed output. Extra operands are ignored with a warning.
+
+## cache
+
+`gutil cache [--offline] put [--] FILE` stores a regular file and prints its lowercase SHA-256 digest. `gutil cache [--offline] get SHA256` looks up a 64-digit hexadecimal digest and writes the verified bytes to stdout.
+
+```sh
+digest=$(gutil cache put artifact.tar)
+gutil cache get "$digest" > restored.tar
+gutil cache --offline get "$digest" > offline.tar
+```
+
+The local cache is enabled by default. An enabled remote cache can serve local misses, and read-write mode also receives uploads. `--offline` skips remote access for the invocation. Use `--` before a file name beginning with a hyphen.
+
+`cache` exits with status `0` on success, `1` on an unavailable entry or failed operation, and `2` on invalid arguments. [Cache configuration and HTTP protocol](configuration.md#cache)

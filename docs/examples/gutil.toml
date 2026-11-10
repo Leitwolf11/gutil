@@ -54,3 +54,18 @@ hyperlinks = "never"
 
 [profiles.ci.diagnostics]
 format = "json"
+
+[cache]
+max-entry-bytes = 16777216
+
+[cache.local]
+enabled = true
+# directory = ".gutil-cache"
+
+[cache.remote]
+mode = "off"
+# endpoint = "https://cache.example.com/team/builds"
+timeout-ms = 3000
+
+[profiles.offline.cache.remote]
+mode = "off"

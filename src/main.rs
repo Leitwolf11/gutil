@@ -1,3 +1,4 @@
+mod cache;
 mod cat;
 mod config;
 mod jobs;
@@ -14,7 +15,7 @@ use presentation::Presentation;
 use std::io::{self, BufWriter, IsTerminal, Write};
 use std::process::ExitCode;
 
-const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  cat  Concatenate files\n  ls   List directory contents\n  pwd  Print the working directory\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
+const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  cache  Store and retrieve content by digest\n  cat    Concatenate files\n  ls     List directory contents\n  pwd    Print the working directory\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
 
 fn main() -> ExitCode {
     // Discard argv[0] and preserve non-UTF-8 filesystem operands.
@@ -62,20 +63,16 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
     }
 
     // Direct help and version requests remain available when a config cannot load.
-    if matches!(command, Some("cat" | "ls" | "pwd"))
-        && args
-            .peek()
-            .and_then(|arg| arg.to_str())
-            .is_some_and(|arg| matches!(arg, "--help" | "--version"))
-    {
+    let offline = command == Some("cache") && args.next_if(|arg| arg == "--offline").is_some();
+    if direct_help_or_version(command, args.peek().and_then(|arg| arg.to_str())) {
         options.source = Source::Disabled;
         options.profile = None;
     }
-    let loaded = match config::load(options.source, options.profile.as_deref()) {
+    let mut loaded = match config::load(options.source, options.profile.as_deref()) {
         Ok(loaded) => loaded,
         Err(error) => return startup_error(&error),
     };
-    let mut settings = loaded.settings;
+    let settings = &mut loaded.settings;
     if let Some(mode) = options.progress {
         settings.global.progress = mode;
     }
@@ -113,10 +110,11 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
     let mut output = BufWriter::new(stdout.lock());
     let mut errors = io::stderr().lock();
     let result = match command {
+        Some("cache") => cache::run(args, offline, &loaded, ui, &mut output, &mut errors),
         Some("ls") => ls::run(
             args,
             job_count,
-            &settings,
+            settings,
             stdout.is_terminal(),
             &mut output,
             &mut errors,
@@ -131,16 +129,26 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
             .map(|()| 2),
     };
     match result.and_then(|status| output.flush().map(|()| status)) {
-        Err(error) if command == Some("pwd") => {
-            ui.error(&mut errors, "gutil pwd", &error.to_string())?;
-            Ok(1)
-        }
-        Err(error) if error.kind() != io::ErrorKind::BrokenPipe => {
-            ui.error(&mut errors, "gutil ls", &error.to_string())?;
+        Err(error)
+            if matches!(command, Some("cache" | "pwd"))
+                || error.kind() != io::ErrorKind::BrokenPipe =>
+        {
+            let label = match command {
+                Some("cache") => "gutil cache",
+                Some("pwd") => "gutil pwd",
+                _ => "gutil ls",
+            };
+            ui.error(&mut errors, label, &error.to_string())?;
             Ok(1)
         }
         result => result,
     }
+}
+
+fn direct_help_or_version(command: Option<&str>, option: Option<&str>) -> bool {
+    matches!(command, Some("cache" | "cat" | "ls" | "pwd"))
+        && (matches!(option, Some("--help" | "--version"))
+            || (command == Some("cache") && option == Some("-h")))
 }
 
 impl GlobalOptions {
@@ -199,7 +207,7 @@ fn parse_when(option: &str, value: Option<&str>) -> Result<When, String> {
 }
 
 fn startup_error(message: &str) -> io::Result<u8> {
-    Presentation::new(config::Settings::default())
+    Presentation::new(&config::Settings::default())
         .error(&mut io::stderr(), "gutil", message)
         .map(|()| 2)
 }

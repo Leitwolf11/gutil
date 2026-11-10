@@ -17,7 +17,7 @@ pub(crate) struct Presentation {
 }
 
 impl Presentation {
-    pub(crate) fn new(settings: Settings) -> Self {
+    pub(crate) fn new(settings: &Settings) -> Self {
         let terminal = io::stderr().is_terminal();
         Self {
             diagnostics: settings.diagnostics,

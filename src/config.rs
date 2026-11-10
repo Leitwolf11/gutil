@@ -31,6 +31,7 @@ choice!(Timezone, Utc, Local);
 choice!(OwnerFormat, Numeric, None);
 choice!(Number, None, All, Nonblank);
 choice!(PwdMode, Physical, Logical);
+choice!(RemoteCacheMode, Off, ReadOnly, ReadWrite);
 
 impl When {
     pub(crate) fn enabled(self, terminal: bool) -> bool {
@@ -139,7 +140,83 @@ pub(crate) struct Pwd {
     pub(crate) mode: PwdMode,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub(crate) struct RemoteCache {
+    pub(crate) mode: RemoteCacheMode,
+    endpoint: Option<String>,
+    pub(crate) timeout_ms: u64,
+}
+
+impl Default for RemoteCache {
+    fn default() -> Self {
+        Self {
+            mode: RemoteCacheMode::Off,
+            endpoint: None,
+            timeout_ms: 3_000,
+        }
+    }
+}
+
+impl RemoteCache {
+    pub(crate) fn endpoint(&self) -> Result<Option<reqwest::Url>, String> {
+        let Some(endpoint) = &self.endpoint else {
+            return if self.mode == RemoteCacheMode::Off {
+                Ok(None)
+            } else {
+                Err("cache.remote.endpoint is required when remote caching is enabled".into())
+            };
+        };
+        let url = reqwest::Url::parse(endpoint).map_err(|_| "invalid cache.remote.endpoint URL")?;
+        let loopback = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+        if (url.scheme() != "https" && !(url.scheme() == "http" && loopback))
+            || !url.has_host()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err("cache.remote.endpoint must use HTTPS (HTTP is allowed on loopback) and omit credentials, query, and fragment".into());
+        }
+        Ok(Some(url))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub(crate) struct LocalCache {
+    pub(crate) enabled: bool,
+    pub(crate) directory: Option<PathBuf>,
+}
+
+impl Default for LocalCache {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            directory: None,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub(crate) struct Cache {
+    pub(crate) max_entry_bytes: usize,
+    pub(crate) local: LocalCache,
+    pub(crate) remote: RemoteCache,
+}
+
+impl Default for Cache {
+    fn default() -> Self {
+        Self {
+            max_entry_bytes: 16 * 1024 * 1024,
+            local: LocalCache::default(),
+            remote: RemoteCache::default(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub(crate) struct Settings {
     pub(crate) global: Global,
@@ -148,6 +225,7 @@ pub(crate) struct Settings {
     pub(crate) ls: Ls,
     pub(crate) cat: Cat,
     pub(crate) pwd: Pwd,
+    pub(crate) cache: Cache,
 }
 
 #[derive(Default)]
@@ -161,9 +239,11 @@ pub(crate) enum Source {
 pub(crate) struct Loaded {
     pub(crate) settings: Settings,
     pub(crate) path: Option<PathBuf>,
+    pub(crate) project_discovered: bool,
 }
 
 pub(crate) fn load(source: Source, profile: Option<&str>) -> Result<Loaded, String> {
+    let discovering = matches!(source, Source::Discover);
     let file = match source {
         Source::Discover => discover()?,
         Source::Explicit(path) => {
@@ -177,6 +257,7 @@ pub(crate) fn load(source: Source, profile: Option<&str>) -> Result<Loaded, Stri
             let settings = parse(&contents, profile).map_err(|error| describe(&path, error))?;
             Ok(Loaded {
                 settings,
+                project_discovered: discovering && path == Path::new("gutil.toml"),
                 path: Some(path),
             })
         }
@@ -184,15 +265,13 @@ pub(crate) fn load(source: Source, profile: Option<&str>) -> Result<Loaded, Stri
         None => Ok(Loaded {
             settings: Settings::default(),
             path: None,
+            project_discovered: false,
         }),
     }
 }
 
 fn discover() -> Result<Option<(String, PathBuf)>, String> {
-    let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-    let home = env::var_os(home_key)
-        .filter(|path| !path.is_empty())
-        .map(|path| PathBuf::from(path).join(".gutil").join("config.toml"));
+    let home = home_dir().map(|path| path.join(".gutil").join("config.toml"));
     for path in [Some(PathBuf::from("gutil.toml")), home]
         .into_iter()
         .flatten()
@@ -204,6 +283,13 @@ fn discover() -> Result<Option<(String, PathBuf)>, String> {
         }
     }
     Ok(None)
+}
+
+pub(crate) fn home_dir() -> Option<PathBuf> {
+    let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    env::var_os(home_key)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
 }
 
 fn read(path: &Path) -> io::Result<String> {
@@ -269,6 +355,13 @@ fn validate(table: Table) -> Result<Settings, String> {
             return Err("global.jobs must be auto or an integer between 1 and 512".into());
         }
     }
+    if !(1..=256 * 1024 * 1024).contains(&settings.cache.max_entry_bytes) {
+        return Err("cache.max-entry-bytes must be between 1 and 268435456".into());
+    }
+    if !(1..=60_000).contains(&settings.cache.remote.timeout_ms) {
+        return Err("cache.remote.timeout-ms must be between 1 and 60000".into());
+    }
+    settings.cache.remote.endpoint()?;
     Ok(settings)
 }
 

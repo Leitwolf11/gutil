@@ -157,7 +157,7 @@ pub(super) fn run(
     output: &mut impl Write,
     errors: &mut impl Write,
 ) -> io::Result<u8> {
-    let ui = Presentation::new(*settings);
+    let ui = Presentation::new(settings);
     let (options, paths) = match parse(args, job_count, settings.ls) {
         Ok(Request::Help) => return output.write_all(HELP.as_bytes()).map(|()| 0),
         Ok(Request::Version) => {
