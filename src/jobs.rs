@@ -3,16 +3,16 @@ use std::io;
 use std::num::NonZeroUsize;
 use std::thread;
 
-const MAX_WORKERS: usize = 512;
+pub(crate) const MAX_WORKERS: usize = 512;
 
 #[derive(Debug, thiserror::Error)]
 #[error("job count must be a positive integer")]
 pub(crate) struct InvalidCount;
 
-pub(crate) fn default_count() -> usize {
+pub(crate) fn default_count(limit: usize) -> usize {
     thread::available_parallelism()
         .map_or(1, NonZeroUsize::get)
-        .min(8)
+        .min(limit)
 }
 
 pub(crate) fn option(

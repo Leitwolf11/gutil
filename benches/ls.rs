@@ -24,7 +24,7 @@ fn list_directories(criterion: &mut Criterion) {
             bench.iter(|| {
                 run(
                     Path::new(env!("CARGO_BIN_EXE_gutil")),
-                    &["ls", flag, "."],
+                    &["--no-config", "ls", flag, "."],
                     directory.path(),
                 );
             });

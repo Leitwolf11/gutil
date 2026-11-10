@@ -1,6 +1,6 @@
 # Benchmarking
 
-The Criterion `ls` benchmark compares end-to-end command latency on a directory containing 1,000 regular files. It runs a name-only listing with `-1` and a long listing with `-la`. Both commands use the same fixture and the C locale. Each timed iteration starts a process, discards standard output, and waits for the process to exit. The fixture is created before timing begins.
+The Criterion `ls` benchmark compares end-to-end command latency on a directory containing 1,000 regular files. It runs a name-only listing with `-1` and a long listing with `-la`. Both commands use the same fixture and the C locale. gutil runs with `--no-config` so user and project configuration cannot affect measurements. Each timed iteration starts a process, discards standard output, and waits for the process to exit. The fixture is created before timing begins.
 
 ## Run the comparison
 

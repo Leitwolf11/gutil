@@ -1,6 +1,8 @@
 use std::fs::Metadata;
 use std::io::{self, Write};
 
+use crate::config::{Long, OwnerFormat, SizeStyle, TimeStyle, Timezone};
+
 #[cfg(unix)]
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 
@@ -21,28 +23,33 @@ pub(super) fn write_total<'a>(
     writeln!(output, "total {}", blocks.div_ceil(2))
 }
 
-pub(super) fn write_metadata(output: &mut impl Write, metadata: &Metadata) -> io::Result<()> {
+pub(super) fn write_metadata(
+    output: &mut impl Write,
+    metadata: &Metadata,
+    options: Long,
+) -> io::Result<()> {
     let kind = file_kind(metadata);
     let timestamp = metadata
         .modified()
         .ok()
         .and_then(|time| jiff::Timestamp::try_from(time).ok());
-    let timestamp = timestamp.map_or_else(
-        || String::from("?"),
-        |time| time.strftime("%F %RZ").to_string(),
-    );
+    let timestamp = timestamp.map_or_else(|| String::from("?"), |time| format_time(time, options));
+    let size = match options.size_style {
+        SizeStyle::Bytes => metadata.len().to_string(),
+        SizeStyle::Human => {
+            rusty_rich::filesize::format_size(metadata.len(), None).replace(' ', "")
+        }
+        SizeStyle::Si => rusty_rich::filesize::decimal(metadata.len(), None, Some("")),
+    };
 
     #[cfg(unix)]
     {
         let mode = permissions(metadata.mode());
-        write!(
-            output,
-            "{kind}{mode} {} {} {} {} {timestamp} ",
-            metadata.nlink(),
-            metadata.uid(),
-            metadata.gid(),
-            metadata.len()
-        )
+        write!(output, "{kind}{mode} {} ", metadata.nlink())?;
+        if options.owner_format == OwnerFormat::Numeric {
+            write!(output, "{} {} ", metadata.uid(), metadata.gid())?;
+        }
+        write!(output, "{size} {timestamp} ")
     }
     #[cfg(not(unix))]
     {
@@ -51,7 +58,28 @@ pub(super) fn write_metadata(output: &mut impl Write, metadata: &Metadata) -> io
         } else {
             "rw-------"
         };
-        write!(output, "{kind}{mode} - - - {} {timestamp} ", metadata.len())
+        write!(output, "{kind}{mode} - ")?;
+        if options.owner_format == OwnerFormat::Numeric {
+            output.write_all(b"- - ")?;
+        }
+        write!(output, "{size} {timestamp} ")
+    }
+}
+
+fn format_time(time: jiff::Timestamp, options: Long) -> String {
+    match (options.time_style, options.timezone) {
+        (TimeStyle::Unix, _) => time.as_second().to_string(),
+        (TimeStyle::Iso, Timezone::Utc) => time.strftime("%F %RZ").to_string(),
+        (TimeStyle::Rfc3339, Timezone::Utc) => time.strftime("%FT%TZ").to_string(),
+        (style, Timezone::Local) => {
+            let zoned = time.to_zoned(jiff::tz::TimeZone::system());
+            let format = if style == TimeStyle::Iso {
+                "%F %R%:z"
+            } else {
+                "%FT%T%:z"
+            };
+            zoned.strftime(format).to_string()
+        }
     }
 }
 

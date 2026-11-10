@@ -9,6 +9,7 @@ use tempfile::tempdir;
 
 fn run(directory: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_gutil"))
+        .arg("--no-config")
         .args(args)
         .current_dir(directory)
         .output()

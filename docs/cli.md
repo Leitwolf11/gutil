@@ -13,6 +13,8 @@ gutil ls -la .
 
 `gutil --help` lists the available subcommands and global options. Use `gutil <COMMAND> --help` for command-specific syntax and options.
 
+Global settings can be supplied by a TOML file, a named profile, or command-line options. [Configuration and profiles](configuration.md)
+
 ## Filesystem jobs
 
 Set the limit on concurrent filesystem jobs with `-j N`, `--jobs N`, or `--threads N`. The option works before or after the subcommand. The following commands use the same limit.
@@ -23,7 +25,7 @@ gutil ls --jobs=4 -la .
 gutil ls -la --threads 4 .
 ```
 
-The default is the detected parallelism, capped at eight. Set the limit to one to run filesystem work serially. Positive job counts above 512 use 512. Concurrent jobs preserve the output order.
+With the built-in settings, the default is the detected parallelism, capped at eight. Set the limit to one to run filesystem work serially. Positive job counts above 512 use 512. Concurrent jobs preserve the output order.
 
 ## ls
 
@@ -78,6 +80,6 @@ gutil cat --number -- report.txt
 | `-L`, `--logical` | Use `PWD` when it is an absolute path without `.` or `..` components and identifies the current directory. Otherwise use the physical path. |
 | `-P`, `--physical` | Resolve symbolic links in the working directory path. |
 
-The last mode option takes precedence. Physical mode is the default. Setting `POSIXLY_CORRECT` selects logical mode by default. In physical mode, Windows uses the platform's canonical path syntax, which can include an extended-length prefix. Windows paths that cannot be represented as UTF-8 produce an error.
+The last mode option takes precedence. Physical mode is the built-in default. Setting `POSIXLY_CORRECT` selects logical mode by default. In physical mode, Windows uses the platform's canonical path syntax, which can include an extended-length prefix. Windows paths that cannot be represented as UTF-8 produce an error.
 
 `pwd` uses one filesystem job. It exits with status `0` after printing the path and `1` for invalid options, an unresolvable working directory, or failed output. Extra operands are ignored with a warning.

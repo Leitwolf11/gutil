@@ -1,0 +1,56 @@
+[global]
+jobs = "auto"
+max-auto-jobs = 8
+progress = "auto"
+
+[output]
+color = "auto"
+hyperlinks = "never"
+
+[diagnostics]
+format = "text"
+verbosity = "normal"
+
+[ls]
+layout = "one-per-line"
+hidden = "omit"
+sort = "name"
+reverse = false
+directories-first = false
+quote = "auto"
+
+[ls.long]
+size-style = "bytes"
+time-style = "iso"
+timezone = "utc"
+owner-format = "numeric"
+
+[cat]
+number = "none"
+squeeze-blank = false
+show-ends = false
+show-tabs = false
+show-nonprinting = false
+
+[pwd]
+mode = "physical"
+
+[profiles.interactive.ls]
+layout = "columns"
+hidden = "almost-all"
+directories-first = true
+
+[profiles.interactive.ls.long]
+size-style = "human"
+timezone = "local"
+
+[profiles.ci.global]
+jobs = 2
+progress = "never"
+
+[profiles.ci.output]
+color = "never"
+hyperlinks = "never"
+
+[profiles.ci.diagnostics]
+format = "json"

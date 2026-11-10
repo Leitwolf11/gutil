@@ -1,55 +1,42 @@
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::Path;
 
 use same_file::Handle;
 use smallvec::SmallVec;
 
+use crate::config::{Cat as Format, Number};
 use crate::jobs;
+use crate::presentation::{Presentation, ProgressReport};
 
-const HELP: &str = "Usage: gutil cat [OPTION]... [FILE]...\n\nCopy files to standard output. With no files, or when FILE is -, read standard input.\n\n  -A, --show-all         Show nonprinting bytes, ends, and tabs\n  -b, --number-nonblank  Number nonempty lines and override -n\n  -e                     Equivalent to -vE\n  -E, --show-ends        Mark line endings with $\n  -n, --number           Number all lines\n  -s, --squeeze-blank    Collapse repeated empty lines\n  -t                     Equivalent to -vT\n  -T, --show-tabs        Mark tabs with ^I\n  -u                     Accepted for POSIX compatibility\n  -v, --show-nonprinting Show nonprinting bytes\n  -j, --jobs, --threads N  Limit concurrent filesystem jobs\n      --help             Print help\n      --version          Print version\n";
-
-#[derive(Default, PartialEq, Eq)]
-enum Number {
-    #[default]
-    None,
-    All,
-    Nonempty,
-}
-
-#[derive(Default, PartialEq, Eq)]
-#[allow(clippy::struct_excessive_bools)] // Display options can be combined independently.
-struct Format {
-    number: Number,
-    squeeze: bool,
-    ends: bool,
-    tabs: bool,
-    nonprinting: bool,
-}
+const HELP: &str = "Usage: gutil cat [OPTION]... [FILE]...\n\nCopy files to standard output. With no files, or when FILE is -, read standard input.\n\n  -A, --show-all         Show nonprinting bytes, ends, and tabs\n  -b, --number-nonblank  Number nonempty lines and override -n\n  -e                     Equivalent to -vE\n  -E, --show-ends        Mark line endings with $\n  -n, --number           Number all lines\n      --number=MODE      none, all, or nonblank\n      --no-squeeze-blank, --no-show-ends, --no-show-tabs, --no-show-nonprinting\n  -s, --squeeze-blank    Collapse repeated empty lines\n  -t                     Equivalent to -vT\n  -T, --show-tabs        Mark tabs with ^I\n  -u                     Accepted for POSIX compatibility\n  -v, --show-nonprinting Show nonprinting bytes\n  -j, --jobs, --threads N  Limit concurrent filesystem jobs\n      --help             Print help\n      --version          Print version\n";
 
 impl Format {
-    fn flag(&mut self, flag: u8) -> bool {
+    fn flag(&mut self, flag: u8, explicit_nonblank: &mut bool) -> bool {
         match flag {
             b'A' => {
-                self.ends = true;
-                self.tabs = true;
-                self.nonprinting = true;
+                self.show_ends = true;
+                self.show_tabs = true;
+                self.show_nonprinting = true;
             }
-            b'b' => self.number = Number::Nonempty,
+            b'b' => {
+                self.number = Number::Nonblank;
+                *explicit_nonblank = true;
+            }
             b'e' => {
-                self.ends = true;
-                self.nonprinting = true;
+                self.show_ends = true;
+                self.show_nonprinting = true;
             }
-            b'E' => self.ends = true,
-            b'n' if self.number != Number::Nonempty => self.number = Number::All,
-            b's' => self.squeeze = true,
+            b'E' => self.show_ends = true,
+            b'n' if !*explicit_nonblank => self.number = Number::All,
+            b's' => self.squeeze_blank = true,
             b't' => {
-                self.tabs = true;
-                self.nonprinting = true;
+                self.show_tabs = true;
+                self.show_nonprinting = true;
             }
-            b'T' => self.tabs = true,
-            b'v' => self.nonprinting = true,
+            b'T' => self.show_tabs = true,
+            b'v' => self.show_nonprinting = true,
             b'n' | b'u' => {}
             _ => return false,
         }
@@ -74,8 +61,9 @@ enum ParseError {
 fn parse(
     mut args: impl Iterator<Item = OsString>,
     mut job_count: usize,
+    mut format: Format,
 ) -> Result<Request, ParseError> {
-    let mut format = Format::default();
+    let mut explicit_nonblank = false;
     let mut files = SmallVec::new();
     let mut parse_options = true;
     while let Some(arg) = args.next() {
@@ -99,6 +87,31 @@ fn parse(
             b"--number-nonblank" => b'b',
             b"--show-ends" => b'E',
             b"--number" => b'n',
+            b"--number=none" | b"--number=all" | b"--number=nonblank" => {
+                format.number = match bytes {
+                    b"--number=none" => Number::None,
+                    b"--number=all" => Number::All,
+                    _ => Number::Nonblank,
+                };
+                explicit_nonblank = format.number == Number::Nonblank;
+                continue;
+            }
+            b"--no-squeeze-blank" => {
+                format.squeeze_blank = false;
+                continue;
+            }
+            b"--no-show-ends" => {
+                format.show_ends = false;
+                continue;
+            }
+            b"--no-show-tabs" => {
+                format.show_tabs = false;
+                continue;
+            }
+            b"--no-show-nonprinting" => {
+                format.show_nonprinting = false;
+                continue;
+            }
             b"--squeeze-blank" => b's',
             b"--show-tabs" => b'T',
             b"--show-nonprinting" => b'v',
@@ -109,7 +122,7 @@ fn parse(
                         job_count = jobs::short_value(&flags[index + 1..], &mut args)?;
                         break;
                     }
-                    if !format.flag(flag) {
+                    if !format.flag(flag, &mut explicit_nonblank) {
                         return Err(ParseError::InvalidOption(arg));
                     }
                 }
@@ -120,7 +133,7 @@ fn parse(
                 continue;
             }
         };
-        format.flag(flag);
+        format.flag(flag, &mut explicit_nonblank);
     }
     if files.is_empty() {
         files.push(OsString::from("-"));
@@ -128,8 +141,13 @@ fn parse(
     Ok(Request::Copy(format, files, job_count))
 }
 
-pub(super) fn run(args: impl Iterator<Item = OsString>, job_count: usize) -> io::Result<u8> {
-    match parse(args, job_count) {
+pub(super) fn run(
+    args: impl Iterator<Item = OsString>,
+    job_count: usize,
+    format: Format,
+    ui: Presentation,
+) -> io::Result<u8> {
+    match parse(args, job_count, format) {
         Ok(Request::Help) => io::stdout().write_all(HELP.as_bytes()).map(|()| 0),
         Ok(Request::Version) => {
             writeln!(io::stdout(), "gutil cat {}", env!("CARGO_PKG_VERSION")).map(|()| 0)
@@ -139,32 +157,38 @@ pub(super) fn run(args: impl Iterator<Item = OsString>, job_count: usize) -> io:
                 .max_blocking_threads(count)
                 .build()?;
             runtime.block_on(async move {
-                tokio::task::spawn_blocking(move || copy_files(format, files))
+                tokio::task::spawn_blocking(move || copy_files(format, files, ui))
                     .await
                     .map_err(io::Error::other)?
             })
         }
         Err(error) => {
-            writeln!(
-                io::stderr(),
-                "gutil cat: {error}\nTry 'gutil cat --help' for more information."
+            ui.error(
+                &mut io::stderr(),
+                "gutil cat",
+                &format!("{error}\nTry 'gutil cat --help' for more information."),
             )?;
             Ok(1)
         }
     }
 }
 
-fn copy_files(format: Format, files: SmallVec<[OsString; 4]>) -> io::Result<u8> {
+fn copy_files(format: Format, files: SmallVec<[OsString; 4]>, ui: Presentation) -> io::Result<u8> {
     let destination = Handle::stdout().ok().filter(|handle| {
         handle
             .as_file()
             .metadata()
             .is_ok_and(|metadata| metadata.is_file())
     });
-    let mut output = io::stdout().lock();
+    let stdout = io::stdout();
+    let interactive =
+        stdout.is_terminal() || (files.iter().any(|file| file == "-") && io::stdin().is_terminal());
+    let mut output = stdout.lock();
     let mut errors = io::stderr().lock();
     let mut stream = Stream::new(format);
+    let mut progress = ui.progress("gutil cat", "bytes", interactive);
     let mut status = 0;
+    let single_file = files.len() == 1;
 
     for operand in files {
         let result = if operand == "-" {
@@ -174,18 +198,35 @@ fn copy_files(format: Format, files: SmallVec<[OsString; 4]>) -> io::Result<u8> 
             if is_destination {
                 Some(same_file_error())
             } else {
-                stream.copy(&mut io::stdin().lock(), &mut output)?
+                stream.copy(
+                    &mut io::stdin().lock(),
+                    &mut output,
+                    &mut progress,
+                    &mut errors,
+                )?
             }
         } else {
             match File::open(Path::new(&operand)).and_then(Handle::from_file) {
                 Ok(input) if destination.as_ref() == Some(&input) => Some(same_file_error()),
-                Ok(input) => stream.copy(&mut input.as_file(), &mut output)?,
+                Ok(input) => {
+                    let mut file = input.as_file();
+                    if single_file {
+                        if let Some(progress) = &mut progress {
+                            if let Ok(metadata) = file.metadata() {
+                                if metadata.is_file() {
+                                    progress.set_total(metadata.len());
+                                }
+                            }
+                        }
+                    }
+                    stream.copy(&mut file, &mut output, &mut progress, &mut errors)?
+                }
                 Err(error) => Some(error),
             }
         };
 
         if let Some(error) = result {
-            report(&mut errors, &operand, &error)?;
+            report(ui, &mut errors, &operand, &error)?;
             status = 1;
         }
     }
@@ -194,6 +235,9 @@ fn copy_files(format: Format, files: SmallVec<[OsString; 4]>) -> io::Result<u8> 
         output.write_all(b"\r")?;
     }
     output.flush()?;
+    if let Some(progress) = &mut progress {
+        progress.finish(&mut errors);
+    }
     Ok(status)
 }
 
@@ -202,8 +246,13 @@ fn same_file_error() -> io::Error {
 }
 
 #[allow(clippy::unnecessary_debug_formatting)] // Escape control characters in operands.
-fn report(output: &mut impl Write, operand: &OsStr, error: &io::Error) -> io::Result<()> {
-    writeln!(output, "gutil cat: {operand:?}: {error}")
+fn report(
+    ui: Presentation,
+    output: &mut impl Write,
+    operand: &OsStr,
+    error: &io::Error,
+) -> io::Result<()> {
+    ui.error(output, "gutil cat", &format!("{operand:?}: {error}"))
 }
 
 struct Stream {
@@ -233,6 +282,8 @@ impl Stream {
         &mut self,
         input: &mut impl Read,
         output: &mut impl Write,
+        progress: &mut Option<ProgressReport>,
+        errors: &mut impl Write,
     ) -> io::Result<Option<io::Error>> {
         loop {
             let read = match input.read(&mut self.input) {
@@ -252,6 +303,9 @@ impl Stream {
                 output.write_all(&self.output)?;
             }
             output.flush()?;
+            if let Some(progress) = progress {
+                progress.advance(read as u64, errors);
+            }
         }
     }
 
@@ -263,13 +317,13 @@ impl Stream {
         }
 
         if byte == b'\n' {
-            if self.line_start && self.previous_blank && self.format.squeeze {
+            if self.line_start && self.previous_blank && self.format.squeeze_blank {
                 return Ok(());
             }
             if self.line_start && self.format.number == Number::All {
                 self.write_number()?;
             }
-            if self.format.ends {
+            if self.format.show_ends {
                 self.output.push(b'$');
             }
             self.output.push(byte);
@@ -283,10 +337,12 @@ impl Stream {
         }
         self.line_start = false;
         match byte {
-            b'\r' if self.format.ends && !self.format.nonprinting => self.pending_cr = true,
-            b'\t' if self.format.tabs => self.output.extend_from_slice(b"^I"),
+            b'\r' if self.format.show_ends && !self.format.show_nonprinting => {
+                self.pending_cr = true;
+            }
+            b'\t' if self.format.show_tabs => self.output.extend_from_slice(b"^I"),
             b'\t' => self.output.push(byte),
-            _ if self.format.nonprinting => show_byte(&mut self.output, byte),
+            _ if self.format.show_nonprinting => show_byte(&mut self.output, byte),
             _ => self.output.push(byte),
         }
         Ok(())
