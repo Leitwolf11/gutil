@@ -8,7 +8,7 @@ use std::process::{Command, Output};
 fn run(directory: &Path, pwd: Option<&OsStr>, posix: bool, args: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_gutil"));
     command
-        .arg("pwd")
+        .args(["--no-config", "pwd"])
         .args(args)
         .current_dir(directory)
         .env_remove("PWD")
@@ -153,7 +153,7 @@ fn reports_a_closed_output_pipe() {
     let (reader, writer) = std::io::pipe().unwrap();
     drop(reader);
     let output = Command::new(env!("CARGO_BIN_EXE_gutil"))
-        .args(["pwd", "-P"])
+        .args(["--no-config", "pwd", "-P"])
         .current_dir(directory.path())
         .stdout(writer)
         .output()

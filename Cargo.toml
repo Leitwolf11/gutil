@@ -1,6 +1,6 @@
 [package]
 name = "gutil"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "A single-binary, cross-platform reimplementation of GNU coreutils"
 license = "LGPL-3.0-or-later"
@@ -11,14 +11,18 @@ categories = ["command-line-utilities"]
 
 [dependencies]
 ariadne = "0.6"
-jiff = { version = "0.2", default-features = false, features = ["std"] }
+jiff = { version = "0.2", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo", "tzdb-bundle-platform"] }
 parking_lot = "0.13"
 rustc-hash = "2.1"
 rusty-rich = { version = "0.4", default-features = false }
 same-file = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 smallvec = "1.15"
 thiserror = "2"
 tokio = { version = "1", default-features = false, features = ["rt"] }
+toml = "1"
+terminal_size = "0.4"
 
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false }

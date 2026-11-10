@@ -7,7 +7,7 @@ use std::process::{Command, Output, Stdio};
 
 fn command(directory: &Path, args: &[&str]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_gutil"));
-    command.args(args).current_dir(directory);
+    command.arg("--no-config").args(args).current_dir(directory);
     command
 }
 

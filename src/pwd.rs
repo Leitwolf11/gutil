@@ -4,7 +4,9 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use crate::config::{Pwd, PwdMode};
 use crate::jobs;
+use crate::presentation::Presentation;
 
 const HELP: &str = "Usage: gutil pwd [OPTION]...\n\nPrint the absolute path of the current working directory.\n\n  -L, --logical          Use PWD when it names the current directory\n  -P, --physical         Resolve symbolic links\n  -j, --jobs, --threads N  Limit concurrent filesystem jobs\n      --help             Print help\n      --version          Print version\n\nPhysical mode is the default unless POSIXLY_CORRECT is set.\n";
 
@@ -30,8 +32,9 @@ fn parse(
     mut args: impl Iterator<Item = OsString>,
     mut jobs: usize,
     posix: bool,
+    mode: PwdMode,
 ) -> Result<Request, ParseError> {
-    let mut logical = posix;
+    let mut logical = posix || mode == PwdMode::Logical;
     let mut extra_operands = false;
     while let Some(arg) = args.next() {
         let bytes = arg.as_encoded_bytes();
@@ -80,10 +83,17 @@ fn parse(
 pub(super) fn run(
     args: impl Iterator<Item = OsString>,
     job_count: usize,
+    settings: Pwd,
+    ui: Presentation,
     output: &mut impl Write,
     errors: &mut impl Write,
 ) -> io::Result<u8> {
-    let (logical, jobs) = match parse(args, job_count, env::var_os("POSIXLY_CORRECT").is_some()) {
+    let (logical, jobs) = match parse(
+        args,
+        job_count,
+        env::var_os("POSIXLY_CORRECT").is_some(),
+        settings.mode,
+    ) {
         Ok(Request::Help) => return output.write_all(HELP.as_bytes()).map(|()| 0),
         Ok(Request::Version) => {
             return writeln!(output, "gutil pwd {}", env!("CARGO_PKG_VERSION")).map(|()| 0);
@@ -94,14 +104,15 @@ pub(super) fn run(
             jobs,
         }) => {
             if extra_operands {
-                writeln!(errors, "gutil pwd: ignoring non-option arguments")?;
+                ui.warning(errors, "gutil pwd", "ignoring non-option arguments")?;
             }
             (logical, jobs)
         }
         Err(error) => {
-            writeln!(
+            ui.error(
                 errors,
-                "gutil pwd: {error}\nTry 'gutil pwd --help' for more information."
+                "gutil pwd",
+                &format!("{error}\nTry 'gutil pwd --help' for more information."),
             )?;
             return Ok(1);
         }
@@ -123,9 +134,10 @@ pub(super) fn run(
             Ok(0)
         }
         Err(error) => {
-            writeln!(
+            ui.error(
                 errors,
-                "gutil pwd: cannot determine the working directory: {error}"
+                "gutil pwd",
+                &format!("cannot determine the working directory: {error}"),
             )?;
             Ok(1)
         }
