@@ -70,6 +70,8 @@ fn parse(
     };
     let mut paths = SmallVec::new();
     let mut parse_options = true;
+    let mut explicit_all = false;
+    let mut explicit_long = false;
     while let Some(arg) = args.next() {
         if parse_options {
             if let Some(count) = jobs::option(arg.as_encoded_bytes(), &mut args) {
@@ -81,10 +83,14 @@ fn parse(
             b"--" if parse_options => parse_options = false,
             b"--help" if parse_options => return Ok(Request::Help),
             b"--version" if parse_options => return Ok(Request::Version),
-            b"--all" if parse_options => options.settings.hidden = Hidden::All,
-            b"--almost-all" if parse_options => {
+            b"--all" if parse_options => {
+                explicit_all = true;
+                options.settings.hidden = Hidden::All;
+            }
+            b"--almost-all" if parse_options && !explicit_all => {
                 options.settings.hidden = Hidden::AlmostAll;
             }
+            b"--almost-all" if parse_options => {}
             b"--directory" if parse_options => options.directory = true,
             b"--reverse" if parse_options => options.settings.reverse = true,
             b"--no-reverse" if parse_options => options.settings.reverse = false,
@@ -99,16 +105,32 @@ fn parse(
                 {
                     return Err(ParseError::InvalidOption(arg));
                 }
+                if arg.as_encoded_bytes().starts_with(b"--hidden=") {
+                    explicit_all = false;
+                }
+                if arg.as_encoded_bytes().starts_with(b"--layout=") {
+                    explicit_long = false;
+                }
             }
             [b'-', flags @ ..] if parse_options && !flags.is_empty() => {
                 for (index, flag) in flags.iter().enumerate() {
                     match flag {
-                        b'a' => options.settings.hidden = Hidden::All,
-                        b'A' => options.settings.hidden = Hidden::AlmostAll,
+                        b'a' => {
+                            explicit_all = true;
+                            options.settings.hidden = Hidden::All;
+                        }
+                        b'A' if !explicit_all => options.settings.hidden = Hidden::AlmostAll,
                         b'd' => options.directory = true,
-                        b'l' => options.settings.layout = Layout::Long,
-                        b'1' => options.settings.layout = Layout::OnePerLine,
-                        b'C' => options.settings.layout = Layout::Columns,
+                        b'l' => {
+                            explicit_long = true;
+                            options.settings.layout = Layout::Long;
+                        }
+                        b'1' if !explicit_long => options.settings.layout = Layout::OnePerLine,
+                        b'C' => {
+                            explicit_long = false;
+                            options.settings.layout = Layout::Columns;
+                        }
+                        b'A' | b'1' => {}
                         b'r' => options.settings.reverse = true,
                         b'j' => {
                             options.job_count = jobs::short_value(&flags[index + 1..], &mut args)?;
@@ -159,7 +181,7 @@ pub(super) fn run(
         options,
         display: display::Names::new(settings.output, terminal, options.settings.quote),
         ui,
-        progress: ui.progress("gutil ls", "entries"),
+        progress: ui.progress("gutil ls", "entries", true),
         output,
         errors,
         status: 0,
@@ -168,6 +190,7 @@ pub(super) fn run(
     let result = runtime.block_on(list(options, paths, &mut listing));
     if result.is_ok() {
         if let Some(progress) = &mut listing.progress {
+            listing.output.flush()?;
             progress.finish(listing.errors);
         }
     }

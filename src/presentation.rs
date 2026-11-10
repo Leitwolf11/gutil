@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io::{self, IsTerminal, Write};
 use std::time::{Duration, Instant};
 
@@ -80,13 +81,14 @@ impl Presentation {
         } else {
             command.to_owned()
         };
-        writeln!(writer, "{label}: {message}")
+        writeln!(writer, "{label}: {}", safe_message(message))
     }
 
     pub(crate) fn progress(
         self,
         command: &'static str,
         unit: &'static str,
+        final_only: bool,
     ) -> Option<ProgressReport> {
         let mode = self.progress_mode;
         mode.enabled(self.terminal).then(|| ProgressReport {
@@ -94,6 +96,7 @@ impl Presentation {
             command,
             unit,
             amount: 0,
+            final_only: final_only && mode == When::Auto,
             total: None,
             started: Instant::now(),
             last: None,
@@ -112,6 +115,7 @@ pub(crate) struct ProgressReport {
     command: &'static str,
     unit: &'static str,
     amount: u64,
+    final_only: bool,
     total: Option<u64>,
     started: Instant,
     last: Option<Instant>,
@@ -136,7 +140,8 @@ impl ProgressReport {
     fn emit(&mut self, writer: &mut impl Write, finished: bool) {
         let now = Instant::now();
         let mode = self.presentation.progress_mode;
-        if (mode == When::Auto && now.duration_since(self.started) < Duration::from_millis(250))
+        if (!finished && self.final_only)
+            || (mode == When::Auto && now.duration_since(self.started) < Duration::from_millis(250))
             || (!finished
                 && self
                     .last
@@ -160,7 +165,11 @@ impl ProgressReport {
             let mut columns: Vec<Box<dyn ProgressColumn>> = Vec::new();
             if self.presentation.terminal && self.presentation.color {
                 if self.total.is_some() {
-                    columns.push(Box::new(BarColumn::new().width(16)));
+                    columns.push(Box::new(
+                        BarColumn::new()
+                            .width(16)
+                            .complete_style(Style::from_str("cyan")),
+                    ));
                 } else {
                     columns.push(Box::new(
                         SpinnerColumn::new().style(Style::from_str("cyan")),
@@ -209,5 +218,82 @@ struct Description;
 impl ProgressColumn for Description {
     fn render(&self, task: &Task, _: usize, _: Duration) -> String {
         task.description.clone()
+    }
+}
+
+fn safe_message(message: &str) -> Cow<'_, str> {
+    let unsafe_control =
+        |character: char| character.is_control() && !matches!(character, '\n' | '\t');
+    if !message.chars().any(unsafe_control) {
+        return Cow::Borrowed(message);
+    }
+    let mut escaped = String::with_capacity(message.len());
+    for character in message.chars() {
+        if unsafe_control(character) {
+            escaped.extend(character.escape_default());
+        } else {
+            escaped.push(character);
+        }
+    }
+    Cow::Owned(escaped)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn terminal_progress_uses_a_bar_for_known_totals_and_delays_automatic_output() {
+        let terminal = Presentation {
+            diagnostics: Diagnostics::default(),
+            progress_mode: When::Auto,
+            terminal: true,
+            color: true,
+        };
+        let mut output = Vec::new();
+        let mut report = terminal.progress("gutil cat", "bytes", false).unwrap();
+        report.set_total(8);
+        report.started = Instant::now() + Duration::from_secs(1);
+        report.advance(4, &mut output);
+        assert_eq!(output, b"");
+        report.started = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
+        report.advance(4, &mut output);
+        report.finish(&mut output);
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains('█'));
+        assert!(output.contains("\x1b["));
+        assert!(output.contains("8 B / 8 B (done)"));
+
+        let mut output = Vec::new();
+        let mut report = terminal.progress("gutil cat", "bytes", false).unwrap();
+        report.started = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
+        report.advance(1, &mut output);
+        report.finish(&mut output);
+        assert!(String::from_utf8(output).unwrap().contains("1 B (done)"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn automatic_shared_terminal_progress_only_emits_a_final_record() {
+        let terminal = Presentation {
+            diagnostics: Diagnostics::default(),
+            progress_mode: When::Auto,
+            terminal: true,
+            color: false,
+        };
+        let mut report = terminal.progress("gutil ls", "entries", true).unwrap();
+        report.started = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
+        let mut output = Vec::new();
+        report.advance(2, &mut output);
+        assert_eq!(output, b"");
+        report.finish(&mut output);
+        assert_eq!(output, b"gutil ls: 2 entries (done)\n");
+    }
+
+    #[test]
+    fn escapes_terminal_control_sequences_in_text_diagnostics() {
+        let input = "\x1b]0;unsafe\r\n";
+        assert_eq!(safe_message(input), "\\u{1b}]0;unsafe\\r\n");
     }
 }

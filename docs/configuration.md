@@ -7,7 +7,7 @@ gutil reads the first configuration file it finds.
 | 1 | `./gutil.toml` | `.\gutil.toml` |
 | 2 | `~/.gutil/config.toml` | `%USERPROFILE%\.gutil\config.toml` |
 
-The first file supplies all configuration values. Missing settings use the built-in defaults. An unreadable or invalid file produces an error with its path. Setting keys and enumerated values use kebab-case, and unknown keys are errors.
+The first file supplies all configuration values. Missing settings use the built-in defaults. An unreadable or invalid file produces an error with its path. Direct help and version requests remain available. Use `--no-config` for scripts that require built-in defaults regardless of the working directory. Setting keys and enumerated values use kebab-case, and unknown keys are errors.
 
 Copy the example to one of the paths above, or pass it explicitly. [Example configuration](examples/gutil.toml)
 
@@ -38,7 +38,7 @@ The effective order is command-line flags, the selected profile, the file's top-
 
 Progress is written to stderr. `auto` reports operations lasting at least 250 milliseconds when stderr is a terminal. `always` emits progress even when stderr is redirected. Updates are limited to one per 250 milliseconds, plus a final count. `never` disables progress. `ls` counts output entries, `cat` counts input bytes, and `pwd` has no progress display.
 
-With text diagnostics, rusty-rich renders progress and adds a spinner or a progress bar on terminals with color enabled. A single regular file copied by `cat` provides a known total. With JSON diagnostics, each progress record includes `type`, `command`, `unit`, `completed`, `total`, and `finished`. JSON records and redirected progress contain no terminal control sequences.
+With text diagnostics, rusty-rich renders progress and adds a spinner or a progress bar on terminals with color enabled. A single regular file copied by `cat` provides a known total. With JSON diagnostics, each progress record includes `type`, `command`, `unit`, `completed`, `total`, and `finished`. JSON records and redirected progress contain no terminal control sequences. Automatic progress emits only the final count for listings and for copies that read from or write to a terminal.
 
 ## Command settings
 
@@ -46,12 +46,12 @@ With text diagnostics, rusty-rich renders progress and adds a spinner or a progr
 
 | Key | Values and behavior |
 | --- | --- |
-| `layout` | `"one-per-line"`, `"columns"`, or `"long"`. Columns use rusty-rich and fit the terminal width, with an 80-column fallback. |
+| `layout` | `"one-per-line"`, `"columns"`, or `"long"`. Columns use rusty-rich and fit the terminal width, with an 80-column fallback. Entries are read left to right across each row. |
 | `hidden` | `"omit"`, `"almost-all"`, or `"all"`. |
 | `sort` | `"name"`, `"size"`, `"modified"`, `"extension"`, or `"none"`. Size is largest first and modified is newest first. |
 | `reverse` | Reverse the order within each group. The default is false. |
 | `directories-first` | Group directories before other entries within a listing. The default is false. |
-| `quote` | `"auto"` shows safe display text on a terminal, `"literal"` writes unquoted names, and `"shell"` uses shell quoting. Styled listings sanitize control characters. Plain one-per-line Unix listings can preserve native filename bytes. |
+| `quote` | `"auto"` shows safe display text on a terminal, `"literal"` writes unquoted names, and `"shell"` uses shell quoting. Terminal and styled listings sanitize control characters, including in literal mode. Plain one-per-line Unix listings can preserve native filename bytes. |
 
 Within `[ls.long]`, `size-style` accepts `"bytes"`, `"human"` (base 1024), and `"si"` (base 1000). `time-style` accepts `"iso"`, `"rfc3339"`, and `"unix"`. `timezone` accepts `"utc"` and `"local"`. `owner-format` accepts `"numeric"` or `"none"`.
 

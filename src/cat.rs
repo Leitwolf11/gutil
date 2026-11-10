@@ -1,6 +1,6 @@
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::Path;
 
 use same_file::Handle;
@@ -180,10 +180,13 @@ fn copy_files(format: Format, files: SmallVec<[OsString; 4]>, ui: Presentation) 
             .metadata()
             .is_ok_and(|metadata| metadata.is_file())
     });
-    let mut output = io::stdout().lock();
+    let stdout = io::stdout();
+    let interactive =
+        stdout.is_terminal() || (files.iter().any(|file| file == "-") && io::stdin().is_terminal());
+    let mut output = stdout.lock();
     let mut errors = io::stderr().lock();
     let mut stream = Stream::new(format);
-    let mut progress = ui.progress("gutil cat", "bytes");
+    let mut progress = ui.progress("gutil cat", "bytes", interactive);
     let mut status = 0;
     let single_file = files.len() == 1;
 

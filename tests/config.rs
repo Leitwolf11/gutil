@@ -200,7 +200,7 @@ fn renders_listing_profiles_with_rich_columns_and_hyperlinks() {
         b"",
     );
     assert!(result.status.success());
-    assert!(String::from_utf8_lossy(&result.stdout).contains("1.0 KB"));
+    assert!(String::from_utf8_lossy(&result.stdout).contains("1.0KB"));
 }
 
 #[test]
@@ -285,6 +285,241 @@ fn lets_ls_flags_override_profiles_and_long_format_settings() {
 
     let result = run(cwd, cwd, &["ls", "-l", "files/big.a"], b"");
     assert!(result.status.success());
-    assert!(String::from_utf8_lossy(&result.stdout).contains("1.0 kB"));
+    assert!(String::from_utf8_lossy(&result.stdout).contains("1.0kB"));
     assert!(String::from_utf8_lossy(&result.stdout).contains('T'));
+}
+
+#[test]
+fn uses_listing_sort_modes_and_reports_operand_errors() {
+    let directory = tempfile::tempdir().unwrap();
+    let cwd = directory.path();
+    fs::create_dir(cwd.join("files")).unwrap();
+    fs::create_dir(cwd.join("files/z-dir")).unwrap();
+    for name in ["a.z", "z.a"] {
+        fs::write(cwd.join("files").join(name), []).unwrap();
+    }
+    let result = run(
+        cwd,
+        cwd,
+        &["ls", "--sort=extension", "--directories-first", "files"],
+        b"",
+    );
+    assert!(result.status.success());
+    assert_eq!(result.stdout, b"z-dir\nz.a\na.z\n");
+
+    let result = run(
+        cwd,
+        cwd,
+        &[
+            "ls",
+            "--sort=none",
+            "-r",
+            "--directories-first",
+            "-d",
+            "files/a.z",
+            "files/z-dir",
+            "files/z.a",
+        ],
+        b"",
+    );
+    assert!(result.status.success());
+    assert_eq!(result.stdout, b"files/z-dir\nfiles/z.a\nfiles/a.z\n");
+
+    let result = run(cwd, cwd, &["ls", "-C", "files/a.z", "missing"], b"");
+    assert_eq!(result.status.code(), Some(2));
+    assert_eq!(result.stdout, b"files/a.z\n");
+    assert!(String::from_utf8_lossy(&result.stderr).contains("missing"));
+
+    let result = run(cwd, cwd, &["ls", "--sort=modified", "files"], b"");
+    assert!(result.status.success());
+    assert_eq!(String::from_utf8_lossy(&result.stdout).lines().count(), 3);
+}
+
+#[test]
+fn validates_explicit_sources_and_global_options() {
+    let directory = tempfile::tempdir().unwrap();
+    let cwd = directory.path();
+    for args in [
+        &["--config"][..],
+        &["--config=missing.toml", "ls"],
+        &["--profile", "unknown", "ls"],
+        &["--color=invalid", "ls"],
+        &["-j0", "ls"],
+        &["unknown"],
+    ] {
+        let result = run(cwd, cwd, args, b"");
+        assert_eq!(result.status.code(), Some(2), "{args:?}");
+    }
+    let result = run(cwd, cwd, &["--config=.", "ls"], b"");
+    assert_eq!(result.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("regular file"));
+
+    let result = run(cwd, cwd, &["--help"], b"");
+    assert!(result.status.success());
+    assert!(String::from_utf8_lossy(&result.stdout).contains("--progress=MODE"));
+
+    let result = run(cwd, cwd, &["--version"], b"");
+    assert!(result.status.success());
+    assert!(result.stdout.starts_with(b"gutil "));
+}
+
+#[test]
+fn handles_plain_columns_and_explicit_reverse_order() {
+    let directory = tempfile::tempdir().unwrap();
+    let cwd = directory.path();
+    for name in ["one.a", "two.z", ".hidden"] {
+        fs::write(cwd.join(name), []).unwrap();
+    }
+    let result = run(
+        cwd,
+        cwd,
+        &[
+            "ls",
+            "-AC",
+            "--sort=extension",
+            "--reverse",
+            "--no-directories-first",
+        ],
+        b"",
+    );
+    assert!(result.status.success());
+    let listing = String::from_utf8(result.stdout).unwrap();
+    let names: Vec<_> = listing.split_whitespace().collect();
+    assert_eq!(names, ["two.z", "one.a", ".hidden"]);
+
+    let result = run(
+        cwd,
+        cwd,
+        &["ls", "-d", "--sort=none", "-r", "one.a", "two.z"],
+        b"",
+    );
+    assert!(result.status.success());
+    assert_eq!(result.stdout, b"two.z\none.a\n");
+
+    let result = run(cwd, cwd, &["ls", "--sort=unknown"], b"");
+    assert_eq!(result.status.code(), Some(2));
+}
+
+#[test]
+fn applies_explicit_cat_format_overrides() {
+    let directory = tempfile::tempdir().unwrap();
+    let cwd = directory.path();
+    fs::write(
+        cwd.join("custom.toml"),
+        "[cat]\nsqueeze-blank=true\nshow-ends=true\nshow-nonprinting=true\n",
+    )
+    .unwrap();
+    for (numbering, expected) in [
+        ("--number=all", &b"     1\t\n     2\t\n     3\t\x00"[..]),
+        ("--number=nonblank", &b"\n\n     1\t\x00"[..]),
+    ] {
+        let result = run(
+            cwd,
+            cwd,
+            &[
+                "--config=custom.toml",
+                "cat",
+                numbering,
+                "--no-squeeze-blank",
+                "--no-show-ends",
+                "--no-show-nonprinting",
+            ],
+            b"\n\n\x00",
+        );
+        assert!(result.status.success());
+        assert_eq!(result.stdout, expected);
+    }
+}
+
+#[test]
+fn validates_profile_tables_and_discovered_file_types() {
+    let directory = tempfile::tempdir().unwrap();
+    let cwd = directory.path();
+    let path = cwd.join("gutil.toml");
+    for contents in ["profiles=1", "[profiles]\ninvalid=1"] {
+        fs::write(&path, contents).unwrap();
+        let result = run(cwd, cwd, &["pwd"], b"");
+        assert_eq!(result.status.code(), Some(2));
+        assert!(String::from_utf8_lossy(&result.stderr).contains("must be a table"));
+    }
+    fs::remove_file(&path).unwrap();
+    fs::create_dir(&path).unwrap();
+    let result = run(cwd, cwd, &["pwd"], b"");
+    assert_eq!(result.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("regular file"));
+}
+
+#[test]
+fn styles_text_diagnostics_and_reports_configured_jobs() {
+    let directory = tempfile::tempdir().unwrap();
+    let cwd = directory.path();
+    fs::write(
+        cwd.join("gutil.toml"),
+        "[global]\njobs=3\n[diagnostics]\nverbosity='verbose'\n",
+    )
+    .unwrap();
+    let result = run(cwd, cwd, &["--color=always", "pwd", "extra"], b"");
+    assert!(result.status.success());
+    let errors = String::from_utf8(result.stderr).unwrap();
+    assert!(errors.contains("jobs: 3"));
+    assert!(errors.contains("\x1b["));
+    assert!(errors.contains("ignoring non-option arguments"));
+
+    let result = run(cwd, cwd, &["--color=always", "cat", "missing"], b"");
+    assert_eq!(result.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("missing"));
+}
+
+#[cfg(unix)]
+#[test]
+fn quotes_control_bytes_in_styled_and_shell_listings() {
+    let directory = tempfile::tempdir().unwrap();
+    let cwd = directory.path();
+    fs::write(cwd.join("escape\x1b"), []).unwrap();
+    let result = run(cwd, cwd, &["--color=always", "ls"], b"");
+    assert!(result.status.success());
+    assert_eq!(result.stdout, b"escape?\n");
+    let result = run(cwd, cwd, &["ls", "--quote=shell"], b"");
+    assert!(result.status.success());
+    assert_eq!(result.stdout, b"$'\\x65\\x73\\x63\\x61\\x70\\x65\\x1b'\n");
+}
+
+#[test]
+fn preserves_explicit_short_listing_precedence_and_configurable_modes() {
+    let directory = tempfile::tempdir().unwrap();
+    let cwd = directory.path();
+    fs::write(cwd.join(".hidden"), []).unwrap();
+    for flags in [&["-aA"][..], &["--all", "--almost-all"]] {
+        let mut args = vec!["ls"];
+        args.extend(flags);
+        let result = run(cwd, cwd, &args, b"");
+        assert_eq!(result.stdout, b".\n..\n.hidden\n");
+    }
+
+    let result = run(cwd, cwd, &["ls", "-la1"], b"");
+    assert!(result.status.success());
+    assert!(result.stdout.starts_with(b"total "));
+    let result = run(
+        cwd,
+        cwd,
+        &["ls", "-la", "--layout=one-per-line", "--hidden=omit"],
+        b"",
+    );
+    assert!(result.status.success());
+    assert_eq!(result.stdout, b"");
+}
+
+#[test]
+fn keeps_direct_command_help_available_with_invalid_config() {
+    let directory = tempfile::tempdir().unwrap();
+    let cwd = directory.path();
+    fs::write(cwd.join("gutil.toml"), "[invalid]\nvalue=1").unwrap();
+    for command in ["ls", "cat", "pwd"] {
+        let help = run(cwd, cwd, &[command, "--help"], b"");
+        assert!(help.status.success());
+        assert!(help.stdout.starts_with(b"Usage: gutil "));
+        let version = run(cwd, cwd, &[command, "--version"], b"");
+        assert!(version.status.success());
+        assert!(version.stdout.starts_with(b"gutil "));
+    }
 }

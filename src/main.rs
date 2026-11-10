@@ -39,7 +39,8 @@ struct GlobalOptions {
     hyperlinks: Option<When>,
 }
 
-fn run(mut args: impl Iterator<Item = OsString>) -> io::Result<u8> {
+fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
+    let mut args = args.peekable();
     let mut options = GlobalOptions::default();
     let command = loop {
         let Some(argument) = args.next() else {
@@ -48,7 +49,7 @@ fn run(mut args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         match options.consume(&argument, &mut args) {
             Ok(true) => {}
             Ok(false) => break Some(argument),
-            Err(error) => return writeln!(io::stderr(), "gutil: {error}").map(|()| 2),
+            Err(error) => return startup_error(&error),
         }
     };
     let command = command.as_deref().and_then(OsStr::to_str);
@@ -60,9 +61,19 @@ fn run(mut args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         _ => {}
     }
 
+    // Direct help and version requests remain available when a config cannot load.
+    if matches!(command, Some("cat" | "ls" | "pwd"))
+        && args
+            .peek()
+            .and_then(|arg| arg.to_str())
+            .is_some_and(|arg| matches!(arg, "--help" | "--version"))
+    {
+        options.source = Source::Disabled;
+        options.profile = None;
+    }
     let loaded = match config::load(options.source, options.profile.as_deref()) {
         Ok(loaded) => loaded,
-        Err(error) => return writeln!(io::stderr(), "gutil: {error}").map(|()| 2),
+        Err(error) => return startup_error(&error),
     };
     let mut settings = loaded.settings;
     if let Some(mode) = options.progress {
@@ -185,4 +196,10 @@ fn parse_when(option: &str, value: Option<&str>) -> Result<When, String> {
         Some("always") => Ok(When::Always),
         _ => Err(format!("{option} expects auto, never, or always")),
     }
+}
+
+fn startup_error(message: &str) -> io::Result<u8> {
+    Presentation::new(config::Settings::default())
+        .error(&mut io::stderr(), "gutil", message)
+        .map(|()| 2)
 }

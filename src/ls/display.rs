@@ -50,7 +50,8 @@ impl Names {
     ) -> io::Result<()> {
         if self.styles.is_none()
             && self.cwd.is_none()
-            && (self.quote == Quote::Literal || (self.quote == Quote::Auto && !self.terminal))
+            && !self.terminal
+            && self.quote != Quote::Shell
         {
             #[cfg(unix)]
             {
@@ -68,18 +69,17 @@ impl Names {
     pub(super) fn cell(&self, name: &OsStr, path: &Path, metadata: Option<&Metadata>) -> Cell {
         let text = match self.quote {
             Quote::Shell => shell_quote(name),
-            _ if (self.quote == Quote::Auto && self.terminal) || self.color() || self.links() => {
-                name.to_string_lossy()
-                    .chars()
-                    .map(|character| {
-                        if character.is_control() {
-                            '?'
-                        } else {
-                            character
-                        }
-                    })
-                    .collect()
-            }
+            _ if self.terminal || self.color() || self.links() => name
+                .to_string_lossy()
+                .chars()
+                .map(|character| {
+                    if character.is_control() {
+                        '?'
+                    } else {
+                        character
+                    }
+                })
+                .collect(),
             _ => name.to_string_lossy().into_owned(),
         };
         let style = match (&self.styles, metadata) {

@@ -36,8 +36,10 @@ pub(super) fn write_metadata(
     let timestamp = timestamp.map_or_else(|| String::from("?"), |time| format_time(time, options));
     let size = match options.size_style {
         SizeStyle::Bytes => metadata.len().to_string(),
-        SizeStyle::Human => rusty_rich::filesize::format_size(metadata.len(), None),
-        SizeStyle::Si => rusty_rich::filesize::decimal(metadata.len(), None, None),
+        SizeStyle::Human => {
+            rusty_rich::filesize::format_size(metadata.len(), None).replace(' ', "")
+        }
+        SizeStyle::Si => rusty_rich::filesize::decimal(metadata.len(), None, Some("")),
     };
 
     #[cfg(unix)]
@@ -68,7 +70,7 @@ fn format_time(time: jiff::Timestamp, options: Long) -> String {
     match (options.time_style, options.timezone) {
         (TimeStyle::Unix, _) => time.as_second().to_string(),
         (TimeStyle::Iso, Timezone::Utc) => time.strftime("%F %RZ").to_string(),
-        (TimeStyle::Rfc3339, Timezone::Utc) => time.to_string(),
+        (TimeStyle::Rfc3339, Timezone::Utc) => time.strftime("%FT%TZ").to_string(),
         (style, Timezone::Local) => {
             let zoned = time.to_zoned(jiff::tz::TimeZone::system());
             let format = if style == TimeStyle::Iso {
