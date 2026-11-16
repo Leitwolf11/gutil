@@ -152,6 +152,7 @@ fn installs_and_launches_a_rust_plug_in() {
             .env("CARGO_TARGET_DIR", dir.join("build"))
             .env_remove("RUSTFLAGS")
             .env_remove("CARGO_ENCODED_RUSTFLAGS")
+            .env_remove("RUSTC_WRAPPER")
             .env("GIT_CONFIG_COUNT", "1")
             .env("GIT_CONFIG_KEY_0", format!("url.{url}.insteadOf"))
             .env(

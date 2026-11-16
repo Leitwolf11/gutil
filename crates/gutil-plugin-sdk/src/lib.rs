@@ -22,7 +22,11 @@ impl Invocation {
     /// Returns an error if the process was started without a protocol version or
     /// the supplied version is unsupported.
     pub fn from_env() -> Result<Self, ProtocolError> {
-        match env::var(PROTOCOL_ENV) {
+        Self::from_protocol(env::var(PROTOCOL_ENV))
+    }
+
+    fn from_protocol(protocol: Result<String, env::VarError>) -> Result<Self, ProtocolError> {
+        match protocol {
             Ok(version) if version == PROTOCOL_VERSION => Ok(Self {
                 args: env::args_os().skip(1), // nosemgrep: args-os, rust.lang.security.args-os.args-os
             }),
@@ -57,3 +61,23 @@ impl fmt::Display for ProtocolError {
 }
 
 impl std::error::Error for ProtocolError {}
+
+#[cfg(test)]
+mod tests {
+    use super::{env, Invocation, ProtocolError, PROTOCOL_VERSION};
+
+    #[test]
+    fn validates_launcher_version() {
+        assert!(Invocation::from_protocol(Ok(PROTOCOL_VERSION.to_owned()))
+            .map(Invocation::into_args)
+            .is_ok());
+        assert_eq!(
+            Invocation::from_protocol(Err(env::VarError::NotPresent)).err(),
+            Some(ProtocolError::Missing)
+        );
+        assert_eq!(
+            Invocation::from_protocol(Ok("999".to_owned())).err(),
+            Some(ProtocolError::Unsupported)
+        );
+    }
+}
