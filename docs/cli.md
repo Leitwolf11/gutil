@@ -97,3 +97,10 @@ gutil cache --offline get "$digest" > offline.tar
 The local cache is enabled by default. An enabled remote cache can serve local misses, and read-write mode also receives uploads. `--offline` skips remote access for the invocation. Use `--` before a file name beginning with a hyphen.
 
 `cache` exits with status `0` on success, `1` on an unavailable entry or failed operation, and `2` on invalid arguments. [Cache configuration and HTTP protocol](configuration.md#cache)
+
+## plug-in
+
+`gutil plug-in install github.com:OWNER/EXTENSION` builds and installs a Rust
+plug-in from GitHub. `gutil plug-in use COMMAND [ARGUMENTS]...` runs the
+installed command and forwards every remaining argument to it.
+[Plug-in installation and SDK](plug-ins.md)

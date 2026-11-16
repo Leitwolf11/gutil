@@ -4,10 +4,15 @@ gutil is a Rust 2021 project to reimplement GNU coreutils as a single executable
 
 The name gutil has no expanded form.
 
-## Build and run
+## Install
 
 ```sh
-cargo install --path . --locked
+cargo install gutil
+```
+
+## Usage
+
+```sh
 gutil ls -la .
 gutil --jobs 4 ls -la .
 gutil cat -n README.md
@@ -23,9 +28,15 @@ Filesystem work runs on a Tokio blocking pool. Use `-j N`, `--jobs N`, or `--thr
 - [Command-line reference](docs/cli.md)
 - [Configuration and profiles](docs/configuration.md)
 - [Local and remote cache](docs/configuration.md#cache)
+- [Plug-ins and the Rust SDK](docs/plug-ins.md)
 - [Benchmark methodology and results](docs/benchmarking.md)
 
 ## Development
+
+To install from a local checkout, run `cargo install --path . --locked`.
+
+The plug-in integration tests compile a fixture for WASI. Install the target
+with `rustup target add wasm32-wasip1` before running the test suite.
 
 ```sh
 cargo fmt --all -- --check

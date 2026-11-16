@@ -32,6 +32,8 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Run Clippy
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Install the WASI target for plug-in tests
+        run: rustup target add wasm32-wasip1
       - name: Run tests
         run: cargo test --locked --all-targets --all-features
       - name: Build the release executable
