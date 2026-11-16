@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use gutil_plugin_sdk::{PROTOCOL_ENV, PROTOCOL_VERSION};
 use wasmi::{Engine, ExternType, Linker, Module, Store};
 use wasmi_wasi::{ambient_authority, Dir, WasiCtxBuilder};
 
@@ -14,8 +15,6 @@ const LABEL: &str = "gutil plug-in";
 const BINARY_PREFIX: &str = "gutil-";
 const MODULE_SUFFIX: &str = ".wasm";
 const WASI_TARGET: &str = "wasm32-wasip1";
-const PROTOCOL_ENV: &str = "GUTIL_PLUGIN_PROTOCOL";
-const PROTOCOL_VERSION: &str = "1";
 const HELP: &str = "Usage: gutil plug-in install github.com:OWNER/EXTENSION\n       gutil plug-in use COMMAND [ARGUMENTS]...\n\nInstall a Rust plug-in from GitHub or run an installed plug-in.\nThe binary target must be named gutil-<command> and compile for wasm32-wasip1.\n";
 
 enum Request {

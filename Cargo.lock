@@ -726,10 +726,11 @@ dependencies = [
 
 [[package]]
 name = "gutil"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ariadne",
  "criterion",
+ "gutil-plugin-sdk",
  "insta",
  "jiff",
  "parking_lot 0.13.0",
