@@ -1,6 +1,6 @@
 # gutil-plugin-sdk
 
-Use this Rust library to write an executable for `gutil plug-in use`. Name the
+Use this Rust library to write a WebAssembly module for `gutil plug-in use`. Name the
 binary target `gutil-<command>` and read the host invocation with
 `gutil_plugin_sdk::Invocation::from_env()`.
 
@@ -16,9 +16,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The host forwards native argument strings and inherits the working directory,
-standard streams, and environment. It sets `GUTIL_PLUGIN_PROTOCOL=1` to identify
-the command-line interface understood by this crate.
+Compile the binary target for `wasm32-wasip1`. gutil runs the module in its
+own process and forwards UTF-8 arguments and standard streams. It provides
+the current working directory through WASI and sets
+`GUTIL_PLUGIN_PROTOCOL=1`.
 
 See the [gutil plug-in guide](https://github.com/Leitwolf11/gutil/blob/main/docs/plug-ins.md)
 for packaging and installation.

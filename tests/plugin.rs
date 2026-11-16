@@ -1,8 +1,9 @@
 #![allow(clippy::unwrap_used)]
 
 use std::fs;
+use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 use tempfile::tempdir;
 
@@ -91,9 +92,12 @@ fn main() -> Result<std::process::ExitCode, Box<dyn std::error::Error>> {
     if args.first().is_some_and(|arg| arg == "--exit") {
         return Ok(std::process::ExitCode::from(17));
     }
-    if args.first().is_some_and(|arg| arg == "--raw") {
-        use std::io::Write;
-        std::io::stdout().write_all(args[1].as_encoded_bytes())?;
+    assert!(args.first().is_none_or(|arg| arg != "--trap"), "fixture trap");
+    if args.first().is_some_and(|arg| arg == "--copy") {
+        assert!(std::env::var_os("GUTIL_PLUGIN_TEST_SENTINEL").is_none());
+        let mut file = std::fs::File::open("input.txt")?;
+        std::io::copy(&mut file, &mut std::io::stdout())?;
+        std::io::copy(&mut std::io::stdin(), &mut std::io::stdout())?;
         return Ok(std::process::ExitCode::SUCCESS);
     }
     for argument in args {
@@ -146,6 +150,8 @@ fn installs_and_launches_a_rust_plug_in() {
             ])
             .env("CARGO_NET_GIT_FETCH_WITH_CLI", "true")
             .env("CARGO_TARGET_DIR", dir.join("build"))
+            .env_remove("RUSTFLAGS")
+            .env_remove("CARGO_ENCODED_RUSTFLAGS")
             .env("GIT_CONFIG_COUNT", "1")
             .env("GIT_CONFIG_KEY_0", format!("url.{url}.insteadOf"))
             .env(
@@ -158,26 +164,9 @@ fn installs_and_launches_a_rust_plug_in() {
     let output = install();
     success(&output);
     assert_eq!(output.stdout, b"Installed plugin-command\n");
-    let executable = dir.join(".gutil/plugins").join(format!(
-        "gutil-plugin-command{}",
-        std::env::consts::EXE_SUFFIX
-    ));
-    for protocol in [None, Some("999")] {
-        let mut direct = Command::new(&executable);
-        if let Some(version) = protocol {
-            direct.env("GUTIL_PLUGIN_PROTOCOL", version);
-        } else {
-            direct.env_remove("GUTIL_PLUGIN_PROTOCOL");
-        }
-        let output = direct.output().unwrap();
-        assert_eq!(output.status.code(), Some(1));
-        let expected = if protocol.is_some() {
-            "Unsupported"
-        } else {
-            "Missing"
-        };
-        assert!(String::from_utf8_lossy(&output.stderr).contains(expected));
-    }
+    assert!(dir
+        .join(".gutil/plugins/gutil-plugin-command.wasm")
+        .is_file());
 
     let output = gutil(dir)
         .args([
@@ -186,13 +175,17 @@ fn installs_and_launches_a_rust_plug_in() {
             "plugin-command",
             "--example-flag",
             "a b",
+            "örnek",
             "--",
             "--help",
         ])
         .output()
         .unwrap();
     success(&output);
-    assert_eq!(output.stdout, b"--example-flag\na b\n--\n--help\n");
+    assert_eq!(
+        output.stdout,
+        "--example-flag\na b\nörnek\n--\n--help\n".as_bytes()
+    );
 
     let output = gutil(dir)
         .args(["plug-in", "use", "plugin-command", "--exit"])
@@ -200,20 +193,51 @@ fn installs_and_launches_a_rust_plug_in() {
         .unwrap();
     assert_eq!(output.status.code(), Some(17));
 
+    let output = gutil(dir)
+        .args(["plug-in", "use", "plugin-command", "--trap"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("fixture trap"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("gutil plug-in:"));
+
+    assert_guest_io(dir);
+
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;
-        let argument = b"native-\xff";
         let output = gutil(dir)
-            .args(["plug-in", "use", "plugin-command", "--raw"])
-            .arg(std::ffi::OsStr::from_bytes(argument))
+            .args(["plug-in", "use", "plugin-command"])
+            .arg(std::ffi::OsStr::from_bytes(b"native-\xff"))
             .output()
             .unwrap();
-        success(&output);
-        assert_eq!(output.stdout, argument);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("valid Unicode"));
     }
 
     let output = install();
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&output.stderr).contains("already installed"));
+}
+
+fn assert_guest_io(dir: &Path) {
+    fs::write(dir.join("input.txt"), "cwd input\n").unwrap();
+    let mut child = gutil(dir)
+        .args(["plug-in", "use", "plugin-command", "--copy"])
+        .env("GUTIL_PLUGIN_TEST_SENTINEL", "host-only")
+        .env("PATH", dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"stdin input\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    success(&output);
+    assert_eq!(output.stdout, b"cwd input\nstdin input\n");
 }

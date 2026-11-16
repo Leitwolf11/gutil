@@ -28,6 +28,9 @@ Filesystem work runs on a Tokio blocking pool. Use `-j N`, `--jobs N`, or `--thr
 
 ## Development
 
+The plug-in integration tests compile a fixture for WASI. Install the target
+with `rustup target add wasm32-wasip1` before running the test suite.
+
 ```sh
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings

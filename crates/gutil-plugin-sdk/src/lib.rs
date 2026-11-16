@@ -1,4 +1,4 @@
-//! Read the invocation of an external gutil plug-in.
+//! Read the invocation of an gutil WebAssembly plug-in.
 
 use std::env::{self, ArgsOs};
 use std::fmt;
@@ -15,7 +15,7 @@ pub struct Invocation {
 }
 
 impl Invocation {
-    /// Connect to gutil and capture the native argument iterator.
+    /// Connect to gutil and capture the argument iterator.
     ///
     /// # Errors
     ///
@@ -31,7 +31,7 @@ impl Invocation {
         }
     }
 
-    /// Return the original argument text, including non-Unicode values.
+    /// Return the arguments supplied by the WASI launcher.
     pub fn into_args(self) -> Skip<ArgsOs> {
         self.args
     }

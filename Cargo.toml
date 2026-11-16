@@ -31,6 +31,8 @@ thiserror = "2"
 tokio = { version = "1", default-features = false, features = ["rt", "net", "time"] }
 toml = "1"
 terminal_size = "0.4"
+wasmi = { version = "2", default-features = false, features = ["std", "validate", "auto-dispatch"] }
+wasmi_wasi = "2"
 
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false }

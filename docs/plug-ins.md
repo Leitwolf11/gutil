@@ -12,23 +12,30 @@ The installed Cargo package must provide exactly one binary target named
 registers the command `plugin-command`. A command starts with a lowercase
 ASCII letter and can contain lowercase ASCII letters, digits, and hyphens.
 
-Installation requires GitHub access, Cargo, and a Rust toolchain. Commit the
-extension's `Cargo.lock` so Cargo can reproduce dependency resolution with
-`--locked`. Cargo builds the GitHub repository's default branch for the current
-platform. Builds and plug-ins run with the current user's permissions, so only
-install repositories you trust.
+Installation requires GitHub access, Cargo, and the `wasm32-wasip1` target.
 
-gutil installs binaries to `~/.gutil/plugins` on Linux and macOS and
-`%USERPROFILE%\.gutil\plugins` on Windows. Each command name can be installed
-once. To replace a plug-in, remove its installed `gutil-<command>` executable
-and run the installation command again. On Windows, the executable ends in
-`.exe`.
+```sh
+rustup target add wasm32-wasip1
+```
 
-The launcher forwards every argument after the command name, including
-`--help` and `--`. The plug-in inherits standard streams, the working directory,
-and the environment. It also receives `GUTIL_PLUGIN_PROTOCOL=1`. gutil
-propagates normal exit statuses from 0 through 255. On Unix, a signal
-termination returns 128 plus the signal number.
+Cargo builds the GitHub repository's default branch into a WASI module.
+Commit the extension's `Cargo.lock` so Cargo can resolve dependencies with
+`--locked`. Cargo runs build scripts with your permissions. Install from
+repositories you trust.
+
+gutil stores WebAssembly modules in `~/.gutil/plugins` on Linux and macOS
+and `%USERPROFILE%\.gutil\plugins` on Windows. To replace a plug-in,
+remove its installed `gutil-<command>.wasm` file and install again.
+
+`gutil plug-in use` runs the module inside the gutil process with the embedded
+Wasmi interpreter. The module receives standard streams, access to the current
+directory through WASI, and `GUTIL_PLUGIN_PROTOCOL=1`. Pass filesystem paths
+relative to that directory. The environment available to the module contains
+only the protocol variable.
+
+gutil forwards UTF-8 arguments after the command name, including `--help` and
+`--`. It propagates WASI exit statuses from 0 through 125 and reports traps as
+command failures.
 
 ## Write a plug-in in Rust
 
@@ -44,7 +51,7 @@ path = "src/main.rs"
 ```
 
 The SDK validates the launcher protocol and provides the forwarded arguments as
-native strings. Handle your own flags and exit status in the plug-in.
+`OsString` values. Handle your own flags and exit status in the plug-in.
 
 ```rust
 use gutil_plugin_sdk::Invocation;

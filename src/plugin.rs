@@ -1,18 +1,22 @@
-use std::env;
 use std::ffi::{OsStr, OsString};
-use std::fs::{self, File};
+use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus};
+use std::process::Command;
+
+use wasmi::{Engine, ExternType, Linker, Module, Store};
+use wasmi_wasi::{ambient_authority, Dir, WasiCtxBuilder};
 
 use crate::config;
 use crate::presentation::Presentation;
 
 const LABEL: &str = "gutil plug-in";
-const EXECUTABLE_PREFIX: &str = "gutil-";
+const BINARY_PREFIX: &str = "gutil-";
+const MODULE_SUFFIX: &str = ".wasm";
+const WASI_TARGET: &str = "wasm32-wasip1";
 const PROTOCOL_ENV: &str = "GUTIL_PLUGIN_PROTOCOL";
 const PROTOCOL_VERSION: &str = "1";
-const HELP: &str = "Usage: gutil plug-in install github.com:OWNER/EXTENSION\n       gutil plug-in use COMMAND [ARGUMENTS]...\n\nInstall a Rust plug-in from GitHub or run an installed plug-in.\nThe binary target must be named gutil-<command>.\n";
+const HELP: &str = "Usage: gutil plug-in install github.com:OWNER/EXTENSION\n       gutil plug-in use COMMAND [ARGUMENTS]...\n\nInstall a Rust plug-in from GitHub or run an installed plug-in.\nThe binary target must be named gutil-<command> and compile for wasm32-wasip1.\n";
 
 enum Request {
     Help,
@@ -102,15 +106,15 @@ impl PluginCommand {
         }
     }
 
-    fn executable(&self) -> String {
-        format!("{EXECUTABLE_PREFIX}{}{}", self.0, env::consts::EXE_SUFFIX)
+    fn module_name(&self) -> String {
+        format!("{BINARY_PREFIX}{}{MODULE_SUFFIX}", self.0)
     }
 
-    fn from_executable(name: &OsStr) -> Result<Self, ParseError> {
+    fn from_module_name(name: &OsStr) -> Result<Self, ParseError> {
         let command = name
             .to_str()
-            .and_then(|name| name.strip_suffix(env::consts::EXE_SUFFIX))
-            .and_then(|name| name.strip_prefix(EXECUTABLE_PREFIX))
+            .and_then(|name| name.strip_suffix(MODULE_SUFFIX))
+            .and_then(|name| name.strip_prefix(BINARY_PREFIX))
             .ok_or(ParseError::Command)?;
         Self::parse(OsStr::new(command))
     }
@@ -123,7 +127,7 @@ pub(crate) fn run(args: impl Iterator<Item = OsString>, ui: Presentation) -> io:
             return writeln!(io::stdout(), "gutil {}", env!("CARGO_PKG_VERSION")).map(|()| 0);
         }
         Ok(Request::Install(source)) => install(&source),
-        Ok(Request::Use(command, arguments)) => launch(&command, arguments),
+        Ok(Request::Use(command, arguments)) => launch(&command, &arguments),
         Err(error) => {
             return ui
                 .error(&mut io::stderr(), LABEL, &error.to_string())
@@ -150,7 +154,15 @@ fn install(source: &GitHubSource) -> io::Result<u8> {
     let staging = tempfile::tempdir()?;
     let status = Command::new("cargo")
         .current_dir(staging.path())
-        .args(["install", "--locked", "--git", &source.url(), "--root"])
+        .args([
+            "install",
+            "--locked",
+            "--target",
+            WASI_TARGET,
+            "--git",
+            &source.url(),
+            "--root",
+        ])
         .arg(staging.path())
         .status()
         .map_err(|error| io::Error::new(error.kind(), format!("cannot run cargo: {error}")))?;
@@ -160,15 +172,13 @@ fn install(source: &GitHubSource) -> io::Result<u8> {
         )));
     }
 
-    let (command, executable) = installed_binary(&staging.path().join("bin"))?;
-    let destination = directory.join(command.executable());
+    let (command, module_path) = installed_module(&staging.path().join("bin"))?;
+    let bytes = fs::read(module_path)?;
+    load_module(&Engine::default(), &bytes)?;
+    let destination = directory.join(command.module_name());
     fs::create_dir_all(&directory)?;
-    let mut input = File::open(executable)?;
     let mut output = tempfile::NamedTempFile::new_in(directory)?;
-    io::copy(&mut input, &mut output)?;
-    output
-        .as_file()
-        .set_permissions(input.metadata()?.permissions())?;
+    output.write_all(&bytes)?;
     output.persist_noclobber(destination).map_err(|error| {
         if error.error.kind() == io::ErrorKind::AlreadyExists {
             io::Error::new(
@@ -183,45 +193,79 @@ fn install(source: &GitHubSource) -> io::Result<u8> {
     Ok(0)
 }
 
-fn installed_binary(directory: &Path) -> io::Result<(PluginCommand, PathBuf)> {
-    let invalid =
-        || io::Error::other("the package must install exactly one binary named gutil-<command>");
+fn installed_module(directory: &Path) -> io::Result<(PluginCommand, PathBuf)> {
+    let invalid = || {
+        io::Error::other(
+            "the package must install exactly one WebAssembly module named gutil-<command>.wasm",
+        )
+    };
     let mut entries = fs::read_dir(directory)?;
     let entry = entries.next().ok_or_else(invalid)??;
     if entries.next().transpose()?.is_some() || !entry.file_type()?.is_file() {
         return Err(invalid());
     }
-    let command = PluginCommand::from_executable(&entry.file_name()).map_err(|_| invalid())?;
+    let command = PluginCommand::from_module_name(&entry.file_name()).map_err(|_| invalid())?;
     Ok((command, entry.path()))
 }
 
-fn launch(command: &PluginCommand, arguments: Vec<OsString>) -> io::Result<u8> {
-    let executable = directory()?.join(command.executable());
-    if !fs::symlink_metadata(&executable).is_ok_and(|metadata| metadata.is_file()) {
+fn load_module(engine: &Engine, bytes: &[u8]) -> io::Result<Module> {
+    let module = Module::new(engine, bytes).map_err(io::Error::other)?;
+    if !matches!(module.get_export("_start"), Some(ExternType::Func(signature))
+        if signature.params().is_empty() && signature.results().is_empty())
+    {
+        return Err(io::Error::other(
+            "plug-in must export a WASI _start function",
+        ));
+    }
+    Ok(module)
+}
+
+fn launch(command: &PluginCommand, arguments: &[OsString]) -> io::Result<u8> {
+    let path = directory()?.join(command.module_name());
+    if !fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.is_file()) {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
             format!("plug-in command '{}' is not installed", command.0),
         ));
     }
-    let status = Command::new(executable)
-        .args(arguments)
+    let engine = Engine::default();
+    let module = load_module(&engine, &fs::read(path)?)?;
+    let mut context = WasiCtxBuilder::new();
+    context.inherit_stdio();
+    context
         .env(PROTOCOL_ENV, PROTOCOL_VERSION)
-        .status()?;
-    Ok(exit_code(status))
-}
-
-fn exit_code(status: ExitStatus) -> u8 {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        if let Some(signal) = status.signal() {
-            return u8::try_from(128 + signal).unwrap_or(1);
-        }
+        .map_err(io::Error::other)?;
+    context.arg(&command.0).map_err(io::Error::other)?;
+    for argument in arguments {
+        let argument = argument.to_str().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "WebAssembly plug-in arguments must be valid Unicode",
+            )
+        })?;
+        context.arg(argument).map_err(io::Error::other)?;
     }
-    status
-        .code()
-        .and_then(|code| u8::try_from(code).ok())
-        .unwrap_or(1)
+    context
+        .preopened_dir(Dir::open_ambient_dir(".", ambient_authority())?, ".")
+        .map_err(io::Error::other)?;
+
+    let mut store = Store::new(&engine, context.build());
+    let mut linker = Linker::new(&engine);
+    wasmi_wasi::add_to_linker(&mut linker, |context| context).map_err(io::Error::other)?;
+    let result = linker
+        .instantiate_and_start(&mut store, &module)
+        .and_then(|instance| {
+            instance
+                .get_typed_func::<(), ()>(&store, "_start")?
+                .call(&mut store, ())
+        });
+    match result {
+        Ok(()) => Ok(0),
+        Err(error) => match error.i32_exit_status() {
+            Some(status) => Ok(u8::try_from(status).unwrap_or(1)),
+            None => Err(io::Error::other(error)),
+        },
+    }
 }
 
 #[cfg(test)]
@@ -232,23 +276,27 @@ mod tests {
     #[test]
     fn validates_the_cargo_install_output() {
         let staging = tempfile::tempdir().unwrap();
-        assert!(installed_binary(staging.path()).is_err());
+        assert!(installed_module(staging.path()).is_err());
         let invalid = staging.path().join("other");
         fs::write(&invalid, b"").unwrap();
-        assert!(installed_binary(staging.path()).is_err());
+        assert!(installed_module(staging.path()).is_err());
         let command = PluginCommand::parse(OsStr::new("example")).unwrap();
-        let binary = staging.path().join(command.executable());
+        let binary = staging.path().join(command.module_name());
         fs::write(&binary, b"").unwrap();
-        assert!(installed_binary(staging.path()).is_err());
+        assert!(installed_module(staging.path()).is_err());
         fs::remove_file(invalid).unwrap();
-        let (_, selected) = installed_binary(staging.path()).unwrap();
+        let (_, selected) = installed_module(staging.path()).unwrap();
         assert_eq!(selected, binary);
     }
-
-    #[cfg(unix)]
     #[test]
-    fn maps_signal_exit_status() {
-        use std::os::unix::process::ExitStatusExt;
-        assert_eq!(exit_code(ExitStatus::from_raw(15)), 143);
+    fn validates_the_wasi_entry_point() {
+        let engine = Engine::default();
+        assert!(load_module(&engine, b"invalid").is_err());
+        let empty_module = b"\0asm\x01\0\0\0";
+        let error = load_module(&engine, empty_module).err().unwrap();
+        assert_eq!(
+            error.to_string(),
+            "plug-in must export a WASI _start function"
+        );
     }
 }
