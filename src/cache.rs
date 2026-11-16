@@ -40,11 +40,8 @@ pub(crate) fn run(
     }
     let operation = match (action, operand, args.next()) {
         (Some("put"), Some(path), None) => Ok(Operation::Put(PathBuf::from(path))),
-        (Some("get"), Some(key), None) => key
-            .into_string()
-            .ok()
-            .filter(|key| key.len() == 64 && key.bytes().all(|byte| byte.is_ascii_hexdigit()))
-            .map(|key| Operation::Get(key.to_ascii_lowercase()))
+        (Some("get"), Some(key), None) => CacheKey::parse(&key)
+            .map(Operation::Get)
             .ok_or("expected a 64-digit hexadecimal SHA-256 digest"),
         _ => Err("expected 'put FILE' or 'get SHA256' (see 'gutil cache --help')"),
     };
@@ -65,7 +62,7 @@ pub(crate) fn run(
             let bytes = read_file(&path, cache.limit()).map_err(|error| {
                 io::Error::new(error.kind(), format!("{}: {error}", path.display()))
             })?;
-            let key = digest(&bytes);
+            let key = CacheKey::from_bytes(&bytes);
             cache.put(local.as_deref(), &key, bytes)?;
             writeln!(output, "{key}")?;
         }
@@ -76,7 +73,7 @@ pub(crate) fn run(
 
 enum Operation {
     Put(PathBuf),
-    Get(String),
+    Get(CacheKey),
 }
 
 struct Cache<'a, W> {
@@ -112,7 +109,7 @@ impl<W: Write> Cache<'_, W> {
         Ok(None)
     }
 
-    fn put(&mut self, local: Option<&Path>, key: &str, bytes: Vec<u8>) -> io::Result<()> {
+    fn put(&mut self, local: Option<&Path>, key: &CacheKey, bytes: Vec<u8>) -> io::Result<()> {
         let local_stored = self.store_local(local, key, &bytes)?;
         let remote_stored = self.loaded.settings.cache.remote.mode == RemoteCacheMode::ReadWrite
             && self
@@ -128,9 +125,10 @@ impl<W: Write> Cache<'_, W> {
         }
     }
 
-    fn get(&mut self, local: Option<&Path>, key: &str) -> io::Result<Vec<u8>> {
+    fn get(&mut self, local: Option<&Path>, key: &CacheKey) -> io::Result<Vec<u8>> {
         if let Some(directory) = local {
-            match read_file(&directory.join(key), self.limit()).and_then(|bytes| verify(key, bytes))
+            match read_file(&directory.join(key.as_str()), self.limit())
+                .and_then(|bytes| verify(key, bytes))
             {
                 Ok(bytes) => return Ok(bytes),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -151,7 +149,12 @@ impl<W: Write> Cache<'_, W> {
         ))
     }
 
-    fn store_local(&mut self, local: Option<&Path>, key: &str, bytes: &[u8]) -> io::Result<bool> {
+    fn store_local(
+        &mut self,
+        local: Option<&Path>,
+        key: &CacheKey,
+        bytes: &[u8],
+    ) -> io::Result<bool> {
         let Some(directory) = local else {
             return Ok(false);
         };
@@ -167,7 +170,7 @@ impl<W: Write> Cache<'_, W> {
     fn with_remote<T, F: Future<Output = io::Result<T>>>(
         &mut self,
         operation: impl FnOnce(Remote, Url) -> F,
-        key: &str,
+        key: &CacheKey,
     ) -> io::Result<Option<T>> {
         let settings = &self.loaded.settings.cache.remote;
         if self.offline || settings.mode == RemoteCacheMode::Off {
@@ -222,11 +225,11 @@ fn read_file(path: &Path, limit: usize) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn store_file(directory: &Path, key: &str, bytes: &[u8]) -> io::Result<()> {
+fn store_file(directory: &Path, key: &CacheKey, bytes: &[u8]) -> io::Result<()> {
     fs::create_dir_all(directory)?;
     let mut temporary = tempfile::NamedTempFile::new_in(directory)?;
     temporary.write_all(bytes)?;
-    let destination = directory.join(key);
+    let destination = directory.join(key.as_str());
     if let Err(unpublished) = temporary.persist_noclobber(&destination) {
         // Keep an identical entry published by another writer. Replace corrupt entries.
         if !read_file(&destination, bytes.len()).is_ok_and(|existing| existing == bytes) {
@@ -236,18 +239,39 @@ fn store_file(directory: &Path, key: &str, bytes: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-fn digest(bytes: &[u8]) -> String {
-    const HEX: &[u8] = b"0123456789abcdef";
-    let mut key = String::with_capacity(64);
-    for byte in Sha256::digest(bytes) {
-        key.push(char::from(HEX[usize::from(byte >> 4)]));
-        key.push(char::from(HEX[usize::from(byte & 0x0f)]));
+#[derive(PartialEq, Eq)]
+struct CacheKey(String);
+
+impl CacheKey {
+    fn parse(value: &std::ffi::OsStr) -> Option<Self> {
+        let value = value.to_str()?;
+        (value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            .then(|| Self(value.to_ascii_lowercase()))
     }
-    key
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        const HEX: &[u8] = b"0123456789abcdef";
+        let mut key = String::with_capacity(64);
+        for byte in Sha256::digest(bytes) {
+            key.push(char::from(HEX[usize::from(byte >> 4)]));
+            key.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        Self(key)
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
-fn verify(key: &str, bytes: Vec<u8>) -> io::Result<Vec<u8>> {
-    if digest(&bytes) == key {
+impl std::fmt::Display for CacheKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+fn verify(key: &CacheKey, bytes: Vec<u8>) -> io::Result<Vec<u8>> {
+    if CacheKey::from_bytes(&bytes) == *key {
         Ok(bytes)
     } else {
         Err(io::Error::new(
@@ -273,7 +297,7 @@ struct Remote {
 }
 
 impl Remote {
-    fn new(mut url: Url, key: &str, timeout_ms: u64) -> io::Result<(Self, Url)> {
+    fn new(mut url: Url, key: &CacheKey, timeout_ms: u64) -> io::Result<(Self, Url)> {
         let mut builder = Client::builder()
             .timeout(Duration::from_millis(timeout_ms))
             .redirect(reqwest::redirect::Policy::none());
@@ -300,12 +324,12 @@ impl Remote {
         url.path_segments_mut()
             .map_err(|()| io::Error::other("invalid remote cache endpoint path"))?
             .pop_if_empty()
-            .extend(["sha256", key]);
+            .extend(["sha256", key.as_str()]);
         let client = builder.build().map_err(request_error)?;
         Ok((Self { client }, url))
     }
 
-    async fn get(self, url: Url, key: &str, limit: usize) -> io::Result<Option<Vec<u8>>> {
+    async fn get(self, url: Url, key: &CacheKey, limit: usize) -> io::Result<Option<Vec<u8>>> {
         let mut response = self.client.get(url).send().await.map_err(request_error)?;
         match response.status() {
             StatusCode::NOT_FOUND => return Ok(None),

@@ -14,7 +14,7 @@ enum Request {
     Print {
         logical: bool,
         extra_operands: bool,
-        jobs: usize,
+        jobs: jobs::Count,
     },
     Help,
     Version,
@@ -30,7 +30,7 @@ enum ParseError {
 
 fn parse(
     mut args: impl Iterator<Item = OsString>,
-    mut jobs: usize,
+    mut jobs: jobs::Count,
     posix: bool,
     mode: PwdMode,
 ) -> Result<Request, ParseError> {
@@ -82,7 +82,7 @@ fn parse(
 
 pub(super) fn run(
     args: impl Iterator<Item = OsString>,
-    job_count: usize,
+    job_count: jobs::Count,
     settings: Pwd,
     ui: Presentation,
     output: &mut impl Write,
@@ -119,7 +119,7 @@ pub(super) fn run(
     };
 
     let runtime = tokio::runtime::Builder::new_current_thread()
-        .max_blocking_threads(jobs)
+        .max_blocking_threads(jobs.get())
         .build()?;
     let path = runtime.block_on(async move {
         tokio::task::spawn_blocking(move || working_directory(logical))

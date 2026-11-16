@@ -45,7 +45,7 @@ impl Format {
 }
 
 enum Request {
-    Copy(Format, SmallVec<[OsString; 4]>, usize),
+    Copy(Format, SmallVec<[OsString; 4]>, jobs::Count),
     Help,
     Version,
 }
@@ -60,7 +60,7 @@ enum ParseError {
 
 fn parse(
     mut args: impl Iterator<Item = OsString>,
-    mut job_count: usize,
+    mut job_count: jobs::Count,
     mut format: Format,
 ) -> Result<Request, ParseError> {
     let mut explicit_nonblank = false;
@@ -143,7 +143,7 @@ fn parse(
 
 pub(super) fn run(
     args: impl Iterator<Item = OsString>,
-    job_count: usize,
+    job_count: jobs::Count,
     format: Format,
     ui: Presentation,
 ) -> io::Result<u8> {
@@ -154,7 +154,7 @@ pub(super) fn run(
         }
         Ok(Request::Copy(format, files, count)) => {
             let runtime = tokio::runtime::Builder::new_current_thread()
-                .max_blocking_threads(count)
+                .max_blocking_threads(count.get())
                 .build()?;
             runtime.block_on(async move {
                 tokio::task::spawn_blocking(move || copy_files(format, files, ui))

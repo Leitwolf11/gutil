@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use toml::{Table, Value};
 
+use crate::jobs::Count;
+
 macro_rules! choice {
     ($name:ident, $default:ident $(, $other:ident)*) => {
         #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -47,34 +49,56 @@ enum Auto {
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(untagged)]
-enum JobCount {
+enum JobInput {
     Number(usize),
     Automatic(Auto),
+}
+
+#[derive(Clone, Copy, Debug)]
+enum JobCount {
+    Fixed(Count),
+    Automatic,
+}
+
+fn deserialize_jobs<'de, D: serde::Deserializer<'de>>(input: D) -> Result<JobCount, D::Error> {
+    match JobInput::deserialize(input)? {
+        JobInput::Number(value) => Count::checked(value).map(JobCount::Fixed).ok_or_else(|| {
+            serde::de::Error::custom("global.jobs must be auto or an integer between 1 and 512")
+        }),
+        JobInput::Automatic(_) => Ok(JobCount::Automatic),
+    }
+}
+
+fn deserialize_auto_limit<'de, D: serde::Deserializer<'de>>(input: D) -> Result<Count, D::Error> {
+    Count::checked(usize::deserialize(input)?)
+        .ok_or_else(|| serde::de::Error::custom("global.max-auto-jobs must be between 1 and 512"))
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub(crate) struct Global {
+    #[serde(deserialize_with = "deserialize_jobs")]
     jobs: JobCount,
-    max_auto_jobs: usize,
+    #[serde(deserialize_with = "deserialize_auto_limit")]
+    max_auto_jobs: Count,
     pub(crate) progress: When,
 }
 
 impl Default for Global {
     fn default() -> Self {
         Self {
-            jobs: JobCount::Automatic(Auto::Auto),
-            max_auto_jobs: 8,
+            jobs: JobCount::Automatic,
+            max_auto_jobs: Count::DEFAULT_AUTO_LIMIT,
             progress: When::Auto,
         }
     }
 }
 
 impl Global {
-    pub(crate) fn job_count(self) -> usize {
+    pub(crate) fn job_count(self) -> Count {
         match self.jobs {
-            JobCount::Number(count) => count,
-            JobCount::Automatic(_) => crate::jobs::default_count(self.max_auto_jobs),
+            JobCount::Fixed(count) => count,
+            JobCount::Automatic => self.max_auto_jobs.available(),
         }
     }
 }
@@ -347,14 +371,6 @@ fn validate(table: Table) -> Result<Settings, String> {
     let settings: Settings = Value::Table(table)
         .try_into()
         .map_err(|error: toml::de::Error| error.to_string())?;
-    if !(1..=crate::jobs::MAX_WORKERS).contains(&settings.global.max_auto_jobs) {
-        return Err("global.max-auto-jobs must be between 1 and 512".into());
-    }
-    if let JobCount::Number(count) = settings.global.jobs {
-        if !(1..=crate::jobs::MAX_WORKERS).contains(&count) {
-            return Err("global.jobs must be auto or an integer between 1 and 512".into());
-        }
-    }
     if !(1..=256 * 1024 * 1024).contains(&settings.cache.max_entry_bytes) {
         return Err("cache.max-entry-bytes must be between 1 and 268435456".into());
     }

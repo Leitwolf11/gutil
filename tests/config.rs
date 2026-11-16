@@ -70,6 +70,7 @@ fn rejects_invalid_configurations_with_context() {
     for (contents, expected) in [
         ("[global]\nmax_auto_jobs=2", "max_auto_jobs"),
         ("[global]\njobs=0", "global.jobs"),
+        ("[global]\njobs=513", "global.jobs"),
         ("[global]\nmax-auto-jobs=513", "global.max-auto-jobs"),
         ("[output]\ncolor='sometimes'", "color"),
         ("[profiles.bad.ls]\nlayout='tree'", "profiles.bad"),
@@ -464,6 +465,10 @@ fn styles_text_diagnostics_and_reports_configured_jobs() {
     assert!(errors.contains("jobs: 3"));
     assert!(errors.contains("\x1b["));
     assert!(errors.contains("ignoring non-option arguments"));
+
+    let result = run(cwd, cwd, &["--threads=513", "pwd"], b"");
+    assert!(result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("jobs: 512"));
 
     let result = run(cwd, cwd, &["--color=always", "cat", "missing"], b"");
     assert_eq!(result.status.code(), Some(1));
