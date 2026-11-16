@@ -3,22 +3,41 @@ use std::io;
 use std::num::NonZeroUsize;
 use std::thread;
 
-pub(crate) const MAX_WORKERS: usize = 512;
+const MAX_WORKERS: NonZeroUsize = NonZeroUsize::new(512).unwrap();
 
 #[derive(Debug, thiserror::Error)]
 #[error("job count must be a positive integer")]
 pub(crate) struct InvalidCount;
 
-pub(crate) fn default_count(limit: usize) -> usize {
-    thread::available_parallelism()
-        .map_or(1, NonZeroUsize::get)
-        .min(limit)
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Count(NonZeroUsize);
+
+impl Count {
+    pub(crate) const DEFAULT_AUTO_LIMIT: Self = Self(NonZeroUsize::new(8).unwrap());
+
+    pub(crate) fn checked(count: usize) -> Option<Self> {
+        NonZeroUsize::new(count)
+            .filter(|count| *count <= MAX_WORKERS)
+            .map(Self)
+    }
+
+    pub(crate) fn available(self) -> Self {
+        Self(
+            thread::available_parallelism()
+                .unwrap_or(NonZeroUsize::MIN)
+                .min(self.0),
+        )
+    }
+
+    pub(crate) fn get(self) -> usize {
+        self.0.get()
+    }
 }
 
 pub(crate) fn option(
     argument: &[u8],
     remaining: &mut impl Iterator<Item = OsString>,
-) -> Option<Result<usize, InvalidCount>> {
+) -> Option<Result<Count, InvalidCount>> {
     match argument {
         b"-j" | b"--jobs" | b"--threads" => Some(read_count(None, remaining)),
         _ => [b"-j".as_slice(), b"--jobs=", b"--threads="]
@@ -31,14 +50,14 @@ pub(crate) fn option(
 pub(crate) fn short_value(
     value: &[u8],
     remaining: &mut impl Iterator<Item = OsString>,
-) -> Result<usize, InvalidCount> {
+) -> Result<Count, InvalidCount> {
     read_count((!value.is_empty()).then_some(value), remaining)
 }
 
 fn read_count(
     attached: Option<&[u8]>,
     remaining: &mut impl Iterator<Item = OsString>,
-) -> Result<usize, InvalidCount> {
+) -> Result<Count, InvalidCount> {
     let separate;
     let value = if let Some(value) = attached {
         value
@@ -49,11 +68,11 @@ fn read_count(
     let value = std::str::from_utf8(value).map_err(|_| InvalidCount)?;
     value
         .parse::<NonZeroUsize>()
-        .map(|value| value.get().min(MAX_WORKERS))
+        .map(|value| Count(value.min(MAX_WORKERS)))
         .map_err(|_| InvalidCount)
 }
 
-pub(crate) async fn map<T, U, F>(inputs: Vec<T>, count: usize, work: F) -> io::Result<Vec<U>>
+pub(crate) async fn map<T, U, F>(inputs: Vec<T>, count: Count, work: F) -> io::Result<Vec<U>>
 where
     T: Send + 'static,
     U: Send + 'static,
@@ -64,7 +83,7 @@ where
     }
 
     // Start at most one batch per worker, including for small input sets.
-    let batch_count = count.min(inputs.len());
+    let batch_count = count.get().min(inputs.len());
     let batch_size = inputs.len() / batch_count;
     let larger_batches = inputs.len() % batch_count;
     let mut output = Vec::with_capacity(inputs.len());
@@ -91,7 +110,7 @@ mod tests {
 
     use parking_lot::{Condvar, Mutex};
 
-    use super::map;
+    use super::{map, Count};
 
     #[test]
     #[allow(clippy::unwrap_used)]
@@ -102,14 +121,18 @@ mod tests {
             .unwrap();
         let rendezvous = Arc::new((Mutex::new(0), Condvar::new()));
 
-        let result = runtime.block_on(map(vec![0, 1, 2, 3], 4, move |value| {
-            let (started, ready) = &*rendezvous;
-            let mut started = started.lock();
-            *started += 1;
-            ready.notify_all();
-            ready.wait_while_for(&mut started, |count| *count < 4, Duration::from_secs(5));
-            (value, *started)
-        }));
+        let result = runtime.block_on(map(
+            vec![0, 1, 2, 3],
+            Count::checked(4).unwrap(),
+            move |value| {
+                let (started, ready) = &*rendezvous;
+                let mut started = started.lock();
+                *started += 1;
+                ready.notify_all();
+                ready.wait_while_for(&mut started, |count| *count < 4, Duration::from_secs(5));
+                (value, *started)
+            },
+        ));
 
         assert_eq!(result.unwrap(), [(0, 4), (1, 4), (2, 4), (3, 4)]);
     }

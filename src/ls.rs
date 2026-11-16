@@ -19,7 +19,7 @@ const HELP: &str = "Usage: gutil ls [OPTION]... [FILE]...\n\nList information ab
 struct Options {
     settings: Ls,
     directory: bool,
-    job_count: usize,
+    job_count: jobs::Count,
 }
 
 impl Options {
@@ -60,7 +60,7 @@ enum ParseError {
 
 fn parse(
     mut args: impl Iterator<Item = OsString>,
-    job_count: usize,
+    job_count: jobs::Count,
     settings: Ls,
 ) -> Result<Request, ParseError> {
     let mut options = Options {
@@ -151,7 +151,7 @@ fn parse(
 
 pub(super) fn run(
     args: impl Iterator<Item = OsString>,
-    job_count: usize,
+    job_count: jobs::Count,
     settings: &Settings,
     terminal: bool,
     output: &mut impl Write,
@@ -175,7 +175,7 @@ pub(super) fn run(
     };
 
     let runtime = tokio::runtime::Builder::new_current_thread()
-        .max_blocking_threads(options.job_count)
+        .max_blocking_threads(options.job_count.get())
         .build()?;
     let mut listing = Listing {
         options,

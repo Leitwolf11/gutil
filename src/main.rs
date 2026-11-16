@@ -34,36 +34,65 @@ fn main() -> ExitCode {
 struct GlobalOptions {
     source: Source,
     profile: Option<String>,
-    jobs: Option<usize>,
+    jobs: Option<jobs::Count>,
     progress: Option<When>,
     color: Option<When>,
     hyperlinks: Option<When>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Command {
+    Cache,
+    Cat,
+    Ls,
+    Pwd,
+    Help,
+    Version,
+    Unknown,
+}
+
+impl Command {
+    fn parse(argument: &OsStr) -> Self {
+        match argument.to_str() {
+            Some("cache") => Self::Cache,
+            Some("cat") => Self::Cat,
+            Some("ls") => Self::Ls,
+            Some("pwd") => Self::Pwd,
+            Some("-h" | "--help") => Self::Help,
+            Some("-V" | "--version") => Self::Version,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum GlobalParseError {
+    #[error(transparent)]
+    Jobs(#[from] jobs::InvalidCount),
+    #[error("--config requires a path")]
+    MissingConfig,
+    #[error("--profile requires a name")]
+    MissingProfile,
+    #[error("{0} expects auto, never, or always")]
+    InvalidMode(&'static str),
+}
+
 fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
     let mut args = args.peekable();
-    let mut options = GlobalOptions::default();
-    let command = loop {
-        let Some(argument) = args.next() else {
-            break None;
-        };
-        match options.consume(&argument, &mut args) {
-            Ok(true) => {}
-            Ok(false) => break Some(argument),
-            Err(error) => return startup_error(&error),
-        }
+    let (mut options, command) = match GlobalOptions::parse(&mut args) {
+        Ok(parsed) => parsed,
+        Err(error) => return startup_error(&error.to_string()),
     };
-    let command = command.as_deref().and_then(OsStr::to_str);
     match command {
-        Some("-h" | "--help") => return io::stdout().write_all(HELP.as_bytes()).map(|()| 0),
-        Some("-V" | "--version") => {
+        Command::Help => return io::stdout().write_all(HELP.as_bytes()).map(|()| 0),
+        Command::Version => {
             return writeln!(io::stdout(), "gutil {}", env!("CARGO_PKG_VERSION")).map(|()| 0)
         }
         _ => {}
     }
 
     // Direct help and version requests remain available when a config cannot load.
-    let offline = command == Some("cache") && args.next_if(|arg| arg == "--offline").is_some();
+    let offline = command == Command::Cache && args.next_if(|arg| arg == "--offline").is_some();
     if direct_help_or_version(command, args.peek().and_then(|arg| arg.to_str())) {
         options.source = Source::Disabled;
         options.profile = None;
@@ -92,11 +121,14 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         let profile = options.profile.as_deref().unwrap_or("none");
         ui.context(
             &mut io::stderr(),
-            &format!("settings: {source}; profile: {profile}; jobs: {job_count}"),
+            &format!(
+                "settings: {source}; profile: {profile}; jobs: {}",
+                job_count.get()
+            ),
         )?;
     }
 
-    if command == Some("cat") {
+    if command == Command::Cat {
         return match cat::run(args, job_count, settings.cat, ui) {
             Err(error) => {
                 ui.error(&mut io::stderr(), "gutil cat", &error.to_string())?;
@@ -110,8 +142,8 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
     let mut output = BufWriter::new(stdout.lock());
     let mut errors = io::stderr().lock();
     let result = match command {
-        Some("cache") => cache::run(args, offline, &loaded, ui, &mut output, &mut errors),
-        Some("ls") => ls::run(
+        Command::Cache => cache::run(args, offline, &loaded, ui, &mut output, &mut errors),
+        Command::Ls => ls::run(
             args,
             job_count,
             settings,
@@ -119,7 +151,7 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
             &mut output,
             &mut errors,
         ),
-        Some("pwd") => pwd::run(args, job_count, settings.pwd, ui, &mut output, &mut errors),
+        Command::Pwd => pwd::run(args, job_count, settings.pwd, ui, &mut output, &mut errors),
         _ => ui
             .error(
                 &mut errors,
@@ -130,12 +162,12 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
     };
     match result.and_then(|status| output.flush().map(|()| status)) {
         Err(error)
-            if matches!(command, Some("cache" | "pwd"))
+            if matches!(command, Command::Cache | Command::Pwd)
                 || error.kind() != io::ErrorKind::BrokenPipe =>
         {
             let label = match command {
-                Some("cache") => "gutil cache",
-                Some("pwd") => "gutil pwd",
+                Command::Cache => "gutil cache",
+                Command::Pwd => "gutil pwd",
                 _ => "gutil ls",
             };
             ui.error(&mut errors, label, &error.to_string())?;
@@ -145,25 +177,39 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
     }
 }
 
-fn direct_help_or_version(command: Option<&str>, option: Option<&str>) -> bool {
-    matches!(command, Some("cache" | "cat" | "ls" | "pwd"))
-        && (matches!(option, Some("--help" | "--version"))
-            || (command == Some("cache") && option == Some("-h")))
+fn direct_help_or_version(command: Command, option: Option<&str>) -> bool {
+    matches!(
+        command,
+        Command::Cache | Command::Cat | Command::Ls | Command::Pwd
+    ) && (matches!(option, Some("--help" | "--version"))
+        || (command == Command::Cache && option == Some("-h")))
 }
 
 impl GlobalOptions {
+    fn parse(
+        args: &mut impl Iterator<Item = OsString>,
+    ) -> Result<(Self, Command), GlobalParseError> {
+        let mut options = Self::default();
+        while let Some(argument) = args.next() {
+            if !options.consume(&argument, args)? {
+                return Ok((options, Command::parse(&argument)));
+            }
+        }
+        Ok((options, Command::Unknown))
+    }
+
     fn consume(
         &mut self,
         argument: &OsStr,
         args: &mut impl Iterator<Item = OsString>,
-    ) -> Result<bool, String> {
+    ) -> Result<bool, GlobalParseError> {
         if let Some(count) = jobs::option(argument.as_encoded_bytes(), args) {
-            self.jobs = Some(count.map_err(|error| error.to_string())?);
+            self.jobs = Some(count?);
             return Ok(true);
         }
         if argument == "--config" {
             self.source = Source::Explicit(PathBuf::from(
-                args.next().ok_or("--config requires a path")?,
+                args.next().ok_or(GlobalParseError::MissingConfig)?,
             ));
             return Ok(true);
         }
@@ -175,8 +221,9 @@ impl GlobalOptions {
             .map_or((argument, None), |(key, value)| (key, Some(value)));
         match option {
             "--config" => {
-                self.source =
-                    Source::Explicit(PathBuf::from(attached.ok_or("--config requires a path")?));
+                self.source = Source::Explicit(PathBuf::from(
+                    attached.ok_or(GlobalParseError::MissingConfig)?,
+                ));
             }
             "--no-config" if attached.is_none() => self.source = Source::Disabled,
             "--profile" => {
@@ -185,25 +232,22 @@ impl GlobalOptions {
                     None => args
                         .next()
                         .and_then(|value| value.into_string().ok())
-                        .ok_or("--profile requires a name")?,
+                        .ok_or(GlobalParseError::MissingProfile)?,
                 });
             }
-            "--progress" => self.progress = Some(parse_when(option, attached)?),
-            "--color" => self.color = Some(parse_when(option, attached)?),
-            "--hyperlinks" => self.hyperlinks = Some(parse_when(option, attached)?),
+            "--progress" => self.progress = Some(parse_when("--progress", attached)?),
+            "--color" => self.color = Some(parse_when("--color", attached)?),
+            "--hyperlinks" => self.hyperlinks = Some(parse_when("--hyperlinks", attached)?),
             _ => return Ok(false),
         }
         Ok(true)
     }
 }
 
-fn parse_when(option: &str, value: Option<&str>) -> Result<When, String> {
-    match value {
-        Some("auto") => Ok(When::Auto),
-        Some("never") => Ok(When::Never),
-        Some("always") => Ok(When::Always),
-        _ => Err(format!("{option} expects auto, never, or always")),
-    }
+fn parse_when(option: &'static str, value: Option<&str>) -> Result<When, GlobalParseError> {
+    value
+        .and_then(|value| config::option_value(value).ok())
+        .ok_or(GlobalParseError::InvalidMode(option))
 }
 
 fn startup_error(message: &str) -> io::Result<u8> {
