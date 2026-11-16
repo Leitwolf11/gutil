@@ -72,13 +72,33 @@ fn validates_syntax_and_reports_uninstalled_commands() {
     success(&result);
 }
 
+fn fixture_dependency(sdk: &Path) -> String {
+    if sdk.join("Cargo.toml").is_file() {
+        format!("{{ path = {} }}", serde_json::to_string(sdk).unwrap())
+    } else {
+        let manifest: toml::Table = toml::from_str(include_str!("../Cargo.toml")).unwrap();
+        let version = manifest["dependencies"]["gutil-plugin-sdk"]["version"]
+            .as_str()
+            .unwrap();
+        format!("{version:?}")
+    }
+}
+
+#[test]
+fn packaged_cli_fixture_resolves_sdk_from_the_registry() {
+    let package = tempdir().unwrap();
+    let dependency = fixture_dependency(package.path());
+    assert!(dependency.starts_with('"'));
+    assert!(!dependency.contains("path"));
+}
+
 fn create_fixture(repo: &Path) {
     let sdk = Path::new(env!("CARGO_MANIFEST_DIR")).with_file_name("gutil-plugin-sdk");
+    let dependency = fixture_dependency(&sdk);
     fs::write(
         repo.join("Cargo.toml"),
         format!(
-            "[package]\nname = 'gutil-plugin-command'\nversion = '0.1.0'\nedition = '2021'\n[dependencies]\ngutil-plugin-sdk = {{ path = {} }}\n",
-            serde_json::to_string(&sdk).unwrap()
+            "[package]\nname = 'gutil-plugin-command'\nversion = '0.1.0'\nedition = '2021'\n[dependencies]\ngutil-plugin-sdk = {dependency}\n"
         ),
     )
     .unwrap();
