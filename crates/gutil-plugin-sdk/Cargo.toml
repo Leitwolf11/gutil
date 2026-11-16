@@ -1,0 +1,13 @@
+[package]
+name = "gutil-plugin-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "SDK for external gutil plug-ins"
+license = "LGPL-3.0-or-later"
+repository = "https://github.com/Leitwolf11/gutil"
+readme = "README.md"
+keywords = ["gutil", "cli", "plugin"]
+categories = ["command-line-interface"]
+
+[lints]
+workspace = true

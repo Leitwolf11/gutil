@@ -23,6 +23,7 @@ Filesystem work runs on a Tokio blocking pool. Use `-j N`, `--jobs N`, or `--thr
 - [Command-line reference](docs/cli.md)
 - [Configuration and profiles](docs/configuration.md)
 - [Local and remote cache](docs/configuration.md#cache)
+- [Plug-ins and the Rust SDK](docs/plug-ins.md)
 - [Benchmark methodology and results](docs/benchmarking.md)
 
 ## Development

@@ -3,6 +3,7 @@ mod cat;
 mod config;
 mod jobs;
 mod ls;
+mod plugin;
 mod presentation;
 mod pwd;
 
@@ -15,7 +16,7 @@ use presentation::Presentation;
 use std::io::{self, BufWriter, IsTerminal, Write};
 use std::process::ExitCode;
 
-const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  cache  Store and retrieve content by digest\n  cat    Concatenate files\n  ls     List directory contents\n  pwd    Print the working directory\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
+const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
 
 fn main() -> ExitCode {
     // Discard argv[0] and preserve non-UTF-8 filesystem operands.
@@ -45,6 +46,7 @@ enum Command {
     Cache,
     Cat,
     Ls,
+    Plugin,
     Pwd,
     Help,
     Version,
@@ -57,6 +59,7 @@ impl Command {
             Some("cache") => Self::Cache,
             Some("cat") => Self::Cat,
             Some("ls") => Self::Ls,
+            Some("plug-in") => Self::Plugin,
             Some("pwd") => Self::Pwd,
             Some("-h" | "--help") => Self::Help,
             Some("-V" | "--version") => Self::Version,
@@ -128,6 +131,10 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         )?;
     }
 
+    if command == Command::Plugin {
+        return plugin::run(args, ui);
+    }
+
     if command == Command::Cat {
         return match cat::run(args, job_count, settings.cat, ui) {
             Err(error) => {
@@ -180,9 +187,9 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
 fn direct_help_or_version(command: Command, option: Option<&str>) -> bool {
     matches!(
         command,
-        Command::Cache | Command::Cat | Command::Ls | Command::Pwd
+        Command::Cache | Command::Cat | Command::Ls | Command::Plugin | Command::Pwd
     ) && (matches!(option, Some("--help" | "--version"))
-        || (command == Command::Cache && option == Some("-h")))
+        || (matches!(command, Command::Cache | Command::Plugin) && option == Some("-h")))
 }
 
 impl GlobalOptions {

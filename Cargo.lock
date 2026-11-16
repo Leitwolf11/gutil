@@ -609,7 +609,7 @@ dependencies = [
 
 [[package]]
 name = "gutil"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "ariadne",
  "criterion",
@@ -631,6 +631,10 @@ dependencies = [
  "tokio",
  "toml",
 ]
+
+[[package]]
+name = "gutil-plugin-sdk"
+version = "0.1.0"
 
 [[package]]
 name = "half"
