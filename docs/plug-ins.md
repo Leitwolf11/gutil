@@ -43,7 +43,7 @@ Add this to the extension's `Cargo.toml`:
 
 ```toml
 [dependencies]
-gutil-plugin-sdk = { git = "https://github.com/Leitwolf11/gutil", tag = "v0.6.0" }
+gutil-plugin-sdk = "0.1.0"
 
 [[bin]]
 name = "gutil-plugin-command"

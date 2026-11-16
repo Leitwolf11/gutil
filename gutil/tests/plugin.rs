@@ -73,7 +73,7 @@ fn validates_syntax_and_reports_uninstalled_commands() {
 }
 
 fn create_fixture(repo: &Path) {
-    let sdk = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/gutil-plugin-sdk");
+    let sdk = Path::new(env!("CARGO_MANIFEST_DIR")).with_file_name("gutil-plugin-sdk");
     fs::write(
         repo.join("Cargo.toml"),
         format!(

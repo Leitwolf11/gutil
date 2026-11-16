@@ -4,6 +4,10 @@ Use this Rust library to write a WebAssembly module for `gutil plug-in use`. Nam
 binary target `gutil-<command>` and read the host invocation with
 `gutil_plugin_sdk::Invocation::from_env()`.
 
+```sh
+cargo add gutil-plugin-sdk
+```
+
 ```rust
 use gutil_plugin_sdk::Invocation;
 

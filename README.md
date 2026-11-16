@@ -33,7 +33,7 @@ Filesystem work runs on a Tokio blocking pool. Use `-j N`, `--jobs N`, or `--thr
 
 ## Development
 
-To install from a local checkout, run `cargo install --path . --locked`.
+To install from a local checkout, run `cargo install --path gutil --locked`.
 
 The plug-in integration tests compile a fixture for WASI. Install the target
 with `rustup target add wasm32-wasip1` before running the test suite.

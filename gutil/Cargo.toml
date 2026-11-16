@@ -1,0 +1,43 @@
+[package]
+name = "gutil"
+version = "0.6.1"
+edition.workspace = true
+description = "A single-binary, cross-platform reimplementation of GNU coreutils"
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords = ["coreutils", "cli", "filesystem"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+ariadne = "0.6"
+gutil-plugin-sdk = { path = "../gutil-plugin-sdk", version = "0.1.0" }
+jiff = { version = "0.2", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo", "tzdb-bundle-platform"] }
+parking_lot = "0.13"
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+rustc-hash = "2.1"
+rusty-rich = { version = "0.4", default-features = false }
+same-file = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = { version = "0.11", default-features = false }
+smallvec = "1.15"
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", default-features = false, features = ["rt", "net", "time"] }
+toml = "1"
+terminal_size = "0.4"
+wasmi = { version = "2", default-features = false, features = ["std", "validate", "auto-dispatch"] }
+wasmi_wasi = "2"
+
+[dev-dependencies]
+criterion = { version = "0.8", default-features = false }
+insta = "1"
+proptest = "1"
+
+[[bench]]
+name = "ls"
+harness = false
+
+[lints]
+workspace = true
