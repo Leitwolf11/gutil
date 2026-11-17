@@ -134,13 +134,17 @@ pub(super) fn sleep(
 }
 
 async fn wait_for_duration(seconds: f64) {
-    let now = tokio::time::Instant::now();
-    match Duration::try_from_secs_f64(seconds)
-        .ok()
-        .and_then(|duration| now.checked_add(duration))
-    {
-        Some(deadline) => tokio::time::sleep_until(deadline).await,
-        None => future::pending::<()>().await,
+    // Use bounded timer slots independent of the platform's Instant range
+    // and the Tokio timer wheel's maximum interval.
+    const MAX_WAIT: Duration = Duration::from_hours(24);
+    let Ok(mut remaining) = Duration::try_from_secs_f64(seconds) else {
+        future::pending::<()>().await;
+        return;
+    };
+    while !remaining.is_zero() {
+        let next = remaining.min(MAX_WAIT);
+        tokio::time::sleep(next).await;
+        remaining -= next;
     }
 }
 
@@ -202,17 +206,18 @@ mod tests {
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    fn an_infinite_duration_never_finishes_by_itself() {
+    fn very_large_durations_remain_pending_without_panicking() {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_time()
             .build()
             .unwrap();
-        assert!(runtime
-            .block_on(async {
-                tokio::time::timeout(Duration::from_millis(1), wait_for_duration(f64::INFINITY))
-                    .await
-            })
-            .is_err());
+        for seconds in [f64::INFINITY, 1e12, 1e100] {
+            assert!(runtime
+                .block_on(async {
+                    tokio::time::timeout(Duration::from_millis(1), wait_for_duration(seconds)).await
+                })
+                .is_err());
+        }
     }
 
     #[cfg(target_os = "linux")]
