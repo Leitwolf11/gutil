@@ -56,8 +56,8 @@ fn prints_literal_arguments_and_decodes_all_escape_classes() {
             b"\x07\x08\x1b\x0c\n\r\t\x0b\\\\",
         ),
         (
-            &["-e", r"\0\0123\123\777\xFa\xe\x-\q"],
-            b"\0SS\xff\xfa\x0e\\x-\\q\n",
+            &["-e", r"\0\0123\123\777\xFa\xe\x-\q\08"],
+            b"\0SS\xff\xfa\x0e\\x-\\q\08\n",
         ),
         (&["-e", "one", r"stop\cignored", "never"], b"one stop"),
     ] {
@@ -101,15 +101,36 @@ fn repeats_a_complete_line_and_handles_a_closed_consumer() {
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("option"));
 }
 
+#[cfg(unix)]
+#[test]
+fn repeats_lines_larger_than_the_batch_budget() {
+    let text = "x".repeat(70 * 1024);
+    let mut child = command(&["yes", &text])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut pipe = child.stdout.take().unwrap();
+    let mut actual = vec![0; 2 * (text.len() + 1)];
+    pipe.read_exact(&mut actual).unwrap();
+    drop(pipe);
+    assert_eq!(child.wait().unwrap().code(), Some(1));
+    let expected = format!("{text}\n{text}\n");
+    assert_eq!(actual, expected.as_bytes());
+}
+
 #[test]
 fn prints_only_requested_environment_values_in_operand_order() {
     let general = |args: &[&str]| {
-        command(&[&["printenv"], args].concat())
+        let mut process = command(&[&["printenv"], args].concat());
+        process
             .env_clear()
             .env("GUTIL_TEST_A", "first")
-            .env("GUTIL_TEST_B", "")
-            .output()
-            .unwrap()
+            .env("GUTIL_TEST_B", "");
+        if let Some(profile) = std::env::var_os("LLVM_PROFILE_FILE") {
+            process.env("LLVM_PROFILE_FILE", profile);
+        }
+        process.output().unwrap()
     };
     expect(
         &general(&["-00", "GUTIL_TEST_A", "GUTIL_TEST_B", "GUTIL_TEST_A"]),
@@ -194,7 +215,7 @@ fn applies_openmp_limits_and_saturating_processor_exclusions() {
 #[test]
 fn sums_sleep_durations_and_rejects_negative_or_invalid_values() {
     let start = Instant::now();
-    expect(&run(&["sleep", "0.01s", "0.01", "0x1p-8"]), 0, b"");
+    expect(&run(&["sleep", "0.01s", "0.01", "0x0.8p-7"]), 0, b"");
     assert!(start.elapsed() >= Duration::from_millis(20));
     expect(
         &run(&["sleep", "--", "0d", "0m", "0h", "+0", "0x0"]),
@@ -224,5 +245,27 @@ fn shows_command_specific_help_and_versions() {
             .starts_with(format!("Usage: gutil {utility} ").as_bytes()));
         let version = format!("gutil {utility} {}\n", env!("CARGO_PKG_VERSION"));
         expect(&run(&[utility, "--version"]), 0, version.as_bytes());
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn handles_output_errors_for_non_pipe_destinations() {
+    for (utility, args, status) in [
+        ("yes", &["repeat"][..], 1),
+        ("echo", &["write"][..], 1),
+        ("printenv", &["GUTIL_WRITE_ERROR"][..], 2),
+    ] {
+        let destination = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/full")
+            .unwrap();
+        let output = command(&[&[utility], args].concat())
+            .env("GUTIL_WRITE_ERROR", "write")
+            .stdout(Stdio::from(destination))
+            .output()
+            .unwrap();
+        expect(&output, status, b"");
+        assert!(String::from_utf8_lossy(&output.stderr).contains(utility));
     }
 }

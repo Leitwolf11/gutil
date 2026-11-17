@@ -129,17 +129,19 @@ pub(super) fn sleep(
     let clock = tokio::runtime::Builder::new_current_thread()
         .enable_time()
         .build()?;
-    clock.block_on(async {
-        let now = tokio::time::Instant::now();
-        match Duration::try_from_secs_f64(seconds)
-            .ok()
-            .and_then(|duration| now.checked_add(duration))
-        {
-            Some(deadline) => tokio::time::sleep_until(deadline).await,
-            None => future::pending::<()>().await,
-        }
-    });
+    clock.block_on(wait_for_duration(seconds));
     Ok(())
+}
+
+async fn wait_for_duration(seconds: f64) {
+    let now = tokio::time::Instant::now();
+    match Duration::try_from_secs_f64(seconds)
+        .ok()
+        .and_then(|duration| now.checked_add(duration))
+    {
+        Some(deadline) => tokio::time::sleep_until(deadline).await,
+        None => future::pending::<()>().await,
+    }
 }
 
 fn parse_duration(argument: &str) -> Option<f64> {
@@ -192,4 +194,31 @@ fn parse_hex(text: &str) -> Option<f64> {
             whole * 2.0_f64.powi(exponent)
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{wait_for_duration, Duration};
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn an_infinite_duration_never_finishes_by_itself() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        assert!(runtime
+            .block_on(async {
+                tokio::time::timeout(Duration::from_millis(1), wait_for_duration(f64::INFINITY))
+                    .await
+            })
+            .is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn counts_cpu_lists_with_ranges_and_individual_entries() {
+        assert_eq!(super::cpu_list_count("0-3,8,12-13\n"), Some(7));
+        assert_eq!(super::cpu_list_count("4-2"), None);
+    }
 }

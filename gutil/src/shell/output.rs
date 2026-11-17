@@ -29,13 +29,9 @@ pub(super) fn echo(
             if flags.is_empty() || !flags.iter().all(|flag| matches!(flag, b'n' | b'e' | b'E')) {
                 break;
             }
-            for flag in flags {
-                match flag {
-                    b'n' => newline = false,
-                    b'e' => escapes = true,
-                    b'E' => escapes = posix,
-                    _ => unreachable!(),
-                }
+            newline &= !flags.contains(&b'n');
+            if let Some(flag) = flags.iter().rfind(|&&flag| matches!(flag, b'e' | b'E')) {
+                escapes = posix || *flag == b'e';
             }
             args.next();
         }
@@ -177,7 +173,6 @@ fn repeat(block: &[u8], output: &mut impl Write) -> io::Result<()> {
 #[cfg(target_os = "linux")]
 fn pipe_repeat(block: &[u8], output: &StdoutLock<'_>) -> io::Result<()> {
     use rustix::fs::{fstat, memfd_create, sendfile, FileType, MemfdFlags};
-    use rustix::io::Errno;
 
     // sendfile can remap the same pages into a Linux pipe. Other output types
     // and kernels that reject this transfer use the buffered writer.
@@ -191,11 +186,23 @@ fn pipe_repeat(block: &[u8], output: &StdoutLock<'_>) -> io::Result<()> {
     if source.write_all(block).is_err() {
         return Ok(());
     }
+    transfer_block(block.len(), |offset, remaining| {
+        sendfile(output, &source, Some(offset), remaining)
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn transfer_block(
+    length: usize,
+    mut send: impl FnMut(&mut u64, usize) -> rustix::io::Result<usize>,
+) -> io::Result<()> {
+    use rustix::io::Errno;
+
     let mut transferred = false;
     let mut offset = 0;
     loop {
-        let remaining = block.len() - usize::try_from(offset).map_err(io::Error::other)?;
-        match sendfile(output, &source, Some(&mut offset), remaining) {
+        let remaining = length - usize::try_from(offset).map_err(io::Error::other)?;
+        match send(&mut offset, remaining) {
             Ok(0)
             | Err(Errno::INVAL | Errno::NOSYS | Errno::OPNOTSUPP | Errno::PERM | Errno::ACCESS)
                 if !transferred =>
@@ -205,7 +212,7 @@ fn pipe_repeat(block: &[u8], output: &StdoutLock<'_>) -> io::Result<()> {
             Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
             Ok(_) => {
                 transferred = true;
-                if offset == block.len() as u64 {
+                if offset == length as u64 {
                     offset = 0;
                 }
             }
@@ -262,4 +269,51 @@ pub(super) fn printenv(
         }
     }
     Ok(status)
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::{io, transfer_block};
+    use rustix::io::Errno;
+
+    #[test]
+    fn preserves_offsets_across_interrupted_and_partial_transfers() {
+        let mut expected = [
+            (0, 16, Err(Errno::INTR)),
+            (0, 16, Ok(5)),
+            (5, 11, Ok(11)),
+            (0, 16, Err(Errno::PIPE)),
+        ]
+        .into_iter();
+        let error = transfer_block(16, |offset, remaining| {
+            let (position, length, result) = expected.next().unwrap_or((16, 0, Err(Errno::INVAL)));
+            assert_eq!((*offset, remaining), (position, length));
+            if let Ok(sent) = result {
+                *offset += sent as u64;
+            }
+            result
+        });
+        assert_eq!(
+            error.err().map(|error| error.kind()),
+            Some(io::ErrorKind::BrokenPipe)
+        );
+        assert!(expected.next().is_none());
+    }
+
+    #[test]
+    fn permits_fallback_before_output_and_detects_an_unexpected_early_end() {
+        assert!(transfer_block(16, |_, _| Err(Errno::INVAL)).is_ok());
+        let error = transfer_block(16, |offset, _| {
+            if *offset == 0 {
+                *offset = 8;
+                Ok(8)
+            } else {
+                Ok(0)
+            }
+        });
+        assert_eq!(
+            error.err().map(|error| error.kind()),
+            Some(io::ErrorKind::WriteZero)
+        );
+    }
 }

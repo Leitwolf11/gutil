@@ -30,6 +30,7 @@ Compare timings from the same run. Long-format results include metadata formatti
 - [2026-11-17 · Linux x86-64 · checksums](bench-results/2026-11-17-linux-x86-64-checksum.md)
 - [2026-11-17 · Linux x86-64 · streams and paths](bench-results/2026-11-17-linux-x86-64-streams.md)
 - [2026-11-17 · Linux x86-64 · file names and symbolic links](bench-results/2026-11-17-linux-x86-64-paths.md)
+- [2026-11-17 · Linux x86-64 · shell and system utilities](bench-results/2026-11-17-linux-x86-64-shell.md)
 
 ## Checksum throughput
 
@@ -76,3 +77,16 @@ The lexical commands receive regular-file names, and `realpath` resolves
 those paths on disk. On Unix, `readlink` reads 512 symbolic link targets.
 The harness checks byte-for-byte output parity and measures one and four
 gutil workers for filesystem lookups.
+
+## Shell and system utilities
+
+Set `GNU_COREUTILS_DIR` to the directory containing GNU `true`, `false`,
+`echo`, `printenv`, `nproc`, `sleep`, and `yes`.
+
+```sh
+TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin cargo bench --locked -p gutil --bench shell -- --noplot
+```
+
+The harness checks output and exit status for finite commands and the first
+8,192 output bytes from `yes`. Timed pipe runs drain 16 MiB before closing
+the reader. The report records the exact operands and environment.

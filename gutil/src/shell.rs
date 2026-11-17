@@ -97,16 +97,6 @@ pub(crate) fn run(
     ui: Presentation,
 ) -> io::Result<u8> {
     let mut args = args.peekable();
-    if matches!(command, Command::True | Command::False) {
-        let status = u8::from(command == Command::False);
-        if let Some(first) = args.next() {
-            if let Some(info) = Info::parse(&first).filter(|_| args.peek().is_none()) {
-                info.write(command, &mut io::stdout().lock())?;
-            }
-        }
-        return Ok(status);
-    }
-
     let mut output = BufWriter::new(io::stdout().lock());
     let result = match command {
         Command::Echo => output::echo(args, &mut output).map(|()| 0),
@@ -114,7 +104,15 @@ pub(crate) fn run(
         Command::Printenv => output::printenv(args, &mut output),
         Command::Nproc => system::nproc(args, &mut output).map(|()| 0),
         Command::Sleep => system::sleep(args, &mut output).map(|()| 0),
-        _ => unreachable!(),
+        Command::True | Command::False => {
+            let status = u8::from(command == Command::False);
+            if let Some(first) = args.next() {
+                if let Some(info) = Info::parse(&first).filter(|_| args.peek().is_none()) {
+                    info.write(command, &mut output)?;
+                }
+            }
+            return output.flush().map(|()| status);
+        }
     };
     match result.and_then(|status| output.flush().map(|()| status).map_err(Error::from)) {
         Ok(status) => Ok(status),
