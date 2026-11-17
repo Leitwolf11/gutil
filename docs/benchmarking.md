@@ -30,6 +30,7 @@ Compare timings from the same run. Long-format results include metadata formatti
 - [2026-11-17 · Linux x86-64 · checksums](bench-results/2026-11-17-linux-x86-64-checksum.md)
 - [2026-11-17 · Linux x86-64 · streams and paths](bench-results/2026-11-17-linux-x86-64-streams.md)
 - [2026-11-17 · Linux x86-64 · file names and symbolic links](bench-results/2026-11-17-linux-x86-64-paths.md)
+- [2026-11-17 · Linux x86-64 · file search](bench-results/2026-11-17-linux-x86-64-fd.md)
 
 ## Checksum throughput
 
@@ -76,3 +77,16 @@ The lexical commands receive regular-file names, and `realpath` resolves
 those paths on disk. On Unix, `readlink` reads 512 symbolic link targets.
 The harness checks byte-for-byte output parity and measures one and four
 gutil workers for filesystem lookups.
+
+## File search
+
+Set `REFERENCE_FD` to the upstream fd executable to compare ignore-aware
+file search with one and four workers.
+
+```sh
+TMPDIR=/tmp REFERENCE_FD=/usr/bin/fd cargo bench --locked -p gutil --bench fd -- --noplot
+```
+
+Both implementations search the same tree and apply the same regular
+expression, extension, file type, and ignore rules. The harness verifies
+the matched path set before timing.

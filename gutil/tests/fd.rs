@@ -76,15 +76,14 @@ fn formats_paths_and_honors_depth_and_quiet_options() {
         &run(root, &["--exact-depth=2", "-tf", "", "dir"]),
         &format!("dir{sep}sub{sep}file.txt\n"),
     );
-    let absolute = fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-    let expected = if cfg!(windows) {
-        root
-    } else {
-        absolute.as_path()
-    };
-    check(
-        &run(root, &["-ap", "-d2", "other\\.txt$"]),
-        &format!("{}{sep}dir{sep}other.txt\n", expected.display()),
+    let absolute = run(root, &["-ap", "-d2", "other\\.txt$"]);
+    assert!(absolute.status.success());
+    let absolute = String::from_utf8(absolute.stdout).unwrap();
+    let absolute = Path::new(absolute.strip_suffix('\n').unwrap());
+    assert!(absolute.is_absolute());
+    assert_eq!(
+        fs::canonicalize(absolute).unwrap(),
+        fs::canonicalize(root.join("dir/other.txt")).unwrap()
     );
     check(&run(root, &["-q", "file"]), "");
     assert_eq!(run(root, &["-q", "unavailable"]).status.code(), Some(1));
