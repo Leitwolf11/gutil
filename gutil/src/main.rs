@@ -3,6 +3,7 @@ mod cat;
 mod checksum;
 mod config;
 mod edges;
+mod fd;
 mod file_size;
 mod jobs;
 mod ls;
@@ -21,7 +22,7 @@ use presentation::Presentation;
 use std::io::{self, BufWriter, IsTerminal, Write};
 use std::process::ExitCode;
 
-const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  basename  Print the final component of a path\n  dirname   Print the directory portion of a path\n  readlink  Print symbolic link targets\n  realpath  Print resolved paths\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  head     Print the beginning of files\n  tail     Print the end of files\n  wc       Count lines, words, and bytes\n  md5sum   Print or verify MD5 checksums\n  sha1sum  Print or verify SHA-1 checksums\n  sha224sum, sha256sum, sha384sum, sha512sum  Print or verify SHA-2 checksums\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
+const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  fd       Find files and directories\n  basename  Print the final component of a path\n  dirname   Print the directory portion of a path\n  readlink  Print symbolic link targets\n  realpath  Print resolved paths\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  head     Print the beginning of files\n  tail     Print the end of files\n  wc       Count lines, words, and bytes\n  md5sum   Print or verify MD5 checksums\n  sha1sum  Print or verify SHA-1 checksums\n  sha224sum, sha256sum, sha384sum, sha512sum  Print or verify SHA-2 checksums\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
 
 fn main() -> ExitCode {
     // Discard argv[0] and preserve non-UTF-8 filesystem operands.
@@ -52,6 +53,7 @@ enum Command {
     Cat,
     Checksum(checksum::Algorithm),
     Edge(edges::Edge),
+    Fd,
     Ls,
     Path(paths::Command),
     Plugin,
@@ -71,6 +73,7 @@ impl Command {
             Some("realpath") => Self::Path(paths::Command::Realpath),
             Some("cache") => Self::Cache,
             Some("cat") => Self::Cat,
+            Some("fd") => Self::Fd,
             Some("head") => Self::Edge(edges::Edge::Head),
             Some("tail") => Self::Edge(edges::Edge::Tail),
             Some("ls") => Self::Ls,
@@ -147,6 +150,7 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         Command::Checksum(algorithm) => return checksum::run(algorithm, args, job_count, ui),
         Command::Edge(edge) => return edges::run(edge, args, job_count, ui),
         Command::Wc => return wc::run(args, job_count, ui),
+        Command::Fd => return fd::run(args, job_count, ui),
         _ => {}
     }
 
@@ -226,13 +230,16 @@ fn direct_help_or_version(command: Command, option: Option<&str>) -> bool {
             | Command::Cat
             | Command::Checksum(_)
             | Command::Edge(_)
+            | Command::Fd
             | Command::Ls
             | Command::Path(_)
             | Command::Plugin
             | Command::Pwd
             | Command::Wc
     ) && (matches!(option, Some("--help" | "--version"))
-        || (matches!(command, Command::Cache | Command::Plugin) && option == Some("-h")))
+        || (matches!(command, Command::Cache | Command::Plugin | Command::Fd)
+            && option == Some("-h")
+            || (command == Command::Fd && option == Some("-V"))))
 }
 
 impl GlobalOptions {

@@ -1,6 +1,6 @@
 [package]
 name = "gutil"
-version = "0.9.0"
+version = "0.10.0"
 edition.workspace = true
 description = "A single-binary, cross-platform reimplementation of GNU coreutils"
 license.workspace = true
@@ -33,6 +33,9 @@ terminal_size = "0.4"
 unicode-width = "0.2"
 wasmi = { version = "2", default-features = false, features = ["std", "validate", "auto-dispatch"] }
 wasmi_wasi = "2"
+ignore = "0.4"
+globset = "0.4"
+regex = "1"
 
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false }
