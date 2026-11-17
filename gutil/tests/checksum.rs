@@ -236,7 +236,15 @@ fn round_trips_native_filenames_with_escapes() {
 
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path();
-    let name = OsStr::from_bytes(b"file\\name\n\r\xff");
+    // Apple filesystems require Unicode names. Exercise arbitrary bytes where supported.
+    let suffix: &[u8] = if cfg!(target_vendor = "apple") {
+        b""
+    } else {
+        b"\xff"
+    };
+    let raw = [b"file\\name\n\r".as_slice(), suffix].concat();
+    let escaped = [b"file\\\\name\\n\\r".as_slice(), suffix].concat();
+    let name = OsStr::from_bytes(&raw);
     fs::write(path.join(name), b"abc").unwrap();
 
     for flags in [
@@ -248,11 +256,14 @@ fn round_trips_native_filenames_with_escapes() {
         assert!(output.stdout.starts_with(b"\\"));
         assert!(output
             .stdout
-            .windows(b"file\\\\name\\n\\r\xff".len())
-            .any(|part| part == b"file\\\\name\\n\\r\xff"));
+            .windows(escaped.len())
+            .any(|part| part == escaped));
         let verified = checksum(path, &["sha512sum", "--check"], &output.stdout);
         assert!(verified.status.success());
-        assert_eq!(verified.stdout, b"\\file\\\\name\\n\\r\xff: OK\n");
+        assert_eq!(
+            verified.stdout,
+            [b"\\", escaped.as_slice(), b": OK\n"].concat()
+        );
     }
     let zero = run(
         path,
@@ -260,7 +271,9 @@ fn round_trips_native_filenames_with_escapes() {
         b"",
     );
     assert!(zero.status.success());
-    assert!(zero.stdout.ends_with(b"  file\\name\n\r\xff\0"));
+    assert!(zero
+        .stdout
+        .ends_with(&[b"  ", raw.as_slice(), b"\0"].concat()));
     assert_ne!(zero.stdout[0], b'\\');
 }
 
