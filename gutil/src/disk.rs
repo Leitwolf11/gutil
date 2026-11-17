@@ -3,6 +3,8 @@ use std::ffi::{OsStr, OsString};
 use std::io::{self, BufWriter, IsTerminal, Write};
 use std::path::Path;
 
+use rustc_hash::FxHashMap;
+
 use crate::config::When;
 use crate::jobs;
 use crate::presentation::{color_enabled, Presentation};
@@ -183,10 +185,14 @@ fn collect(
         }
         selected.reverse();
     } else {
+        let mut resolved = FxHashMap::default();
         for path in &options.paths {
-            match find_mount(&mounts, path) {
-                Ok(index) if matches(options, &mounts[index]) => {
-                    selected.push((index, path.as_os_str()));
+            let lookup = resolved
+                .entry(path.as_path())
+                .or_insert_with(|| find_mount(&mounts, path));
+            match &*lookup {
+                Ok(index) if matches(options, &mounts[*index]) => {
+                    selected.push((*index, path.as_os_str()));
                 }
                 Ok(_) => {}
                 Err(error) => {
