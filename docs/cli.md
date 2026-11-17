@@ -383,7 +383,10 @@ namespace on Linux and the system disk inventory on macOS and Windows.
 Use `--all` to include duplicate and special mounts, `--inodes` for inode
 usage, or `--json` for machine-readable results. JSON includes byte totals,
 usage, inode counts, and mount details. Unavailable numeric fields are
-zero in JSON. The single-dash spellings used by upstream duf, such as
+zero in JSON. A mount measurement failure is reported and makes the exit
+status nonzero. Available bytes can be negative on exhausted filesystems.
+The `df` table preserves native filename bytes, and duf uses UTF-8 text.
+The single-dash spellings used by upstream duf, such as
 `-json`, are also accepted.
 
 | Option | Behavior |

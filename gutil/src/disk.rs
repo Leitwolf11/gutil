@@ -60,28 +60,28 @@ enum Error {
 }
 
 struct Row {
-    device: String,
-    target: String,
-    filesystem: String,
-    file: String,
+    device: OsString,
+    target: OsString,
+    filesystem: OsString,
+    file: OsString,
     kind: Kind,
-    options: String,
+    options: OsString,
     usage: Option<Usage>,
 }
 
 impl Row {
     fn new(mount: &Mount, file: &OsStr, usage: Option<Usage>) -> Self {
         Self {
-            device: mount.device.to_string_lossy().into_owned(),
-            target: mount.path.to_string_lossy().into_owned(),
-            filesystem: mount.filesystem.to_string_lossy().into_owned(),
+            device: mount.device.clone(),
+            target: mount.path.as_os_str().to_owned(),
+            filesystem: mount.filesystem.clone(),
             file: if file.is_empty() {
                 "-".into()
             } else {
-                file.to_string_lossy().into_owned()
+                file.to_owned()
             },
             kind: mount.kind,
-            options: mount.options.to_string_lossy().into_owned(),
+            options: mount.options.clone(),
             usage,
         }
     }
@@ -97,7 +97,7 @@ impl Row {
             filesystem: "-".into(),
             file: "-".into(),
             kind: Kind::Special,
-            options: String::new(),
+            options: OsString::new(),
             usage: Some(usage),
         }
     }
@@ -168,25 +168,10 @@ fn collect(
     let mut failure = false;
     let mut selected = Vec::new();
     if options.paths.is_empty() {
-        let mut identities = HashSet::new();
-        let mut paths = HashSet::new();
-        for (index, mount) in mounts.iter().enumerate().rev() {
-            if !options.include_all && !paths.insert(&mount.path) {
-                continue;
-            }
-            if !matches(options, mount) {
-                continue;
-            }
-            if options.include_all
-                || mount
-                    .identity
-                    .as_ref()
-                    .is_none_or(|identity| identities.insert(identity))
-            {
-                selected.push((index, OsStr::new("")));
-            }
-        }
-        selected.reverse();
+        selected = inventory(&mounts, options)
+            .into_iter()
+            .map(|index| (index, OsStr::new("")))
+            .collect();
     } else {
         let mut resolved = FxHashMap::default();
         for path in &options.paths {
@@ -221,6 +206,39 @@ fn collect(
     Ok((rows, failure || stats_failed))
 }
 
+fn inventory(mounts: &[Mount], options: &Options) -> Vec<usize> {
+    if options.include_all {
+        return mounts
+            .iter()
+            .enumerate()
+            .filter_map(|(index, mount)| matches(options, mount).then_some(index))
+            .collect();
+    }
+    let mut paths = HashSet::new();
+    let mut identities = FxHashMap::<&OsStr, usize>::default();
+    let mut selected = Vec::new();
+    for (index, mount) in mounts.iter().enumerate().rev() {
+        if !paths.insert(&mount.path) || !matches(options, mount) {
+            continue;
+        }
+        if let Some(identity) = mount.identity.as_deref() {
+            let candidate = identities.entry(identity).or_insert(index);
+            if preference(mount) < preference(&mounts[*candidate]) {
+                *candidate = index;
+            }
+        } else {
+            selected.push(index);
+        }
+    }
+    selected.extend(identities.into_values());
+    selected.sort_unstable();
+    selected
+}
+
+fn preference(mount: &Mount) -> (bool, usize) {
+    (!mount.primary, mount.path.as_os_str().len())
+}
+
 fn rows(
     command: Command,
     options: &Options,
@@ -242,22 +260,15 @@ fn rows(
             Ok(usage) if filter_zero && usage.size == 0 => {}
             Ok(usage) => rows.push(Row::new(mount, file, Some(*usage))),
             Err(error) => {
-                if options.layout.duf.warnings {
-                    ui.warning(
-                        errors,
-                        command.label(),
-                        &format!("{}: {error}", mount.path.display()),
-                    )?;
+                failure = true;
+                let message = format!("{}: {error}", mount.path.display());
+                if options.layout.duf.warnings && options.include_all {
+                    ui.warning(errors, command.label(), &message)?;
+                } else {
+                    ui.error(errors, command.label(), &message)?;
                 }
                 if options.include_all {
                     rows.push(Row::new(mount, file, None));
-                } else if !options.paths.is_empty() {
-                    failure = true;
-                    ui.error(
-                        errors,
-                        command.label(),
-                        &format!("{}: {error}", mount.path.display()),
-                    )?;
                 }
             }
         }
@@ -273,6 +284,11 @@ fn matches(options: &Options, mount: &Mount) -> bool {
 
 fn find_mount(mounts: &[Mount], file: &Path) -> io::Result<usize> {
     let path = crate::paths::canonical::native_path(std::fs::canonicalize(file)?);
+    if let Some(identity) = source::block_device_identity(&path) {
+        if let Some(index) = device_mount(mounts, &identity) {
+            return Ok(index);
+        }
+    }
     let identity = source::file_identity(&path);
     let has_identity = |mount: &Mount| {
         identity
@@ -294,6 +310,15 @@ fn find_mount(mounts: &[Mount], file: &Path) -> io::Result<usize> {
         })
         .map(|(index, _)| index)
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no mounted filesystem"))
+}
+
+fn device_mount(mounts: &[Mount], identity: &OsStr) -> Option<usize> {
+    mounts
+        .iter()
+        .enumerate()
+        .filter(|(_, mount)| mount.identity.as_deref() == Some(identity))
+        .min_by_key(|(_, mount)| preference(mount))
+        .map(|(index, _)| index)
 }
 
 fn measure(
@@ -344,13 +369,15 @@ mod tests {
             filesystem: "nfs".into(),
             options: "ro".into(),
             identity: None,
+            primary: true,
         };
         let usage = [Some(Err(io::Error::from(io::ErrorKind::PermissionDenied)))];
         let mounts = [broken];
         for (arguments, label, failed, count) in [
-            (&["--warnings", "--all", "file"][..], "gutil duf", false, 1),
+            (&["--warnings", "--all", "file"][..], "gutil duf", true, 1),
             (&["--warnings", "file"], "gutil duf", true, 0),
             (&["file"], "gutil duf", true, 0),
+            (&[], "gutil duf", true, 0),
         ] {
             let args = arguments.iter().map(OsString::from);
             let options::Request::List(options) =
@@ -376,5 +403,35 @@ mod tests {
             }
         }
         assert!(find_mount(&mounts, Path::new(".")).is_err());
+    }
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn selects_primary_mounts_and_keeps_topmost_overlapping_mounts() {
+        let mount = |path: &str, identity: &str, primary| Mount {
+            path: path.into(),
+            device: "device".into(),
+            kind: if primary { Kind::Local } else { Kind::Binds },
+            filesystem: "ext4".into(),
+            options: "rw".into(),
+            identity: Some(identity.into()),
+            primary,
+        };
+        let mounts = [
+            mount("/", "8:1", true),
+            mount("/later-bind", "8:1", false),
+            mount("/z-long-bind", "8:2", false),
+            mount("/short", "8:2", false),
+            mount("/overlay", "8:3", true),
+            mount("/overlay", "8:4", true),
+        ];
+        let options::Request::List(options) =
+            options::parse(Command::Df, std::iter::empty(), Count::DEFAULT_AUTO_LIMIT).unwrap()
+        else {
+            panic!("expected inventory")
+        };
+        assert_eq!(super::inventory(&mounts, &options), [0, 3, 5]);
+        assert_eq!(super::device_mount(&mounts, OsStr::new("8:1")), Some(0));
+        assert_eq!(super::device_mount(&mounts, OsStr::new("8:2")), Some(3));
+        assert_eq!(super::device_mount(&mounts, OsStr::new("99:1")), None);
     }
 }

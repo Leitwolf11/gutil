@@ -326,3 +326,21 @@ fn maps_firmlinked_operands_to_the_same_volume_device() {
         std::fs::metadata(fixture.path()).unwrap().dev()
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn df_preserves_native_operand_bytes() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let fixture = tempfile::tempdir().unwrap();
+    let operand = fixture.path().join(OsStr::from_bytes(b"native-\xff"));
+    std::fs::write(&operand, []).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_gutil"))
+        .args(["--no-config", "df", "--output=file"])
+        .arg(&operand)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(output.stdout.ends_with(b"native-\xff\n"));
+}

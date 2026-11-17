@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+use std::ffi::OsStr;
 use std::io::{self, Write};
 
 use rusty_rich::{AlignMethod, Column as RichColumn, ConsoleOptions, Renderable, Style, Table};
@@ -77,21 +79,23 @@ impl Column {
         .into()
     }
 
-    fn amount(self, usage: Usage) -> u64 {
+    fn amount(self, usage: Usage) -> i128 {
         match self {
-            Self::Size => usage.size,
-            Self::Used => usage.used,
+            Self::Size => i128::from(usage.size),
+            Self::Used => i128::from(usage.used),
             Self::Available => usage.available,
             Self::Use => percent(usage.used, usage.available).unwrap_or(0),
-            Self::Inodes => usage.inodes,
-            Self::InodesUsed => usage.inodes_used,
-            Self::InodesFree => usage.inodes_free,
-            Self::InodesUse => percent(usage.inodes_used, usage.inodes_free).unwrap_or(0),
+            Self::Inodes => i128::from(usage.inodes),
+            Self::InodesUsed => i128::from(usage.inodes_used),
+            Self::InodesFree => i128::from(usage.inodes_free),
+            Self::InodesUse => {
+                percent(usage.inodes_used, i128::from(usage.inodes_free)).unwrap_or(0)
+            }
             _ => 0,
         }
     }
 
-    fn text(self, row: &Row) -> Option<&str> {
+    fn text(self, row: &Row) -> Option<&OsStr> {
         match self {
             Self::Source => Some(&row.device),
             Self::Filesystem => Some(&row.filesystem),
@@ -110,7 +114,7 @@ impl Column {
 
     fn cell(self, row: &Row, size: Size) -> String {
         if let Some(text) = self.text(row) {
-            return crate::presentation::safe_message(text)
+            return crate::presentation::safe_message(&text.to_string_lossy())
                 .replace(['\n', '\r'], "\u{fffd}")
                 .replace('\t', " ");
         }
@@ -121,7 +125,8 @@ impl Column {
         match self {
             Self::Size | Self::Used | Self::Available => format_size(amount, size),
             Self::Use | Self::InodesUse => {
-                if (self == Self::Use && usage.used.saturating_add(usage.available) == 0)
+                if (self == Self::Use
+                    && i128::from(usage.used).saturating_add(usage.available) <= 0)
                     || (self == Self::InodesUse && usage.inodes == 0)
                 {
                     "-".into()
@@ -135,9 +140,13 @@ impl Column {
     }
 }
 
-fn percent(used: u64, available: u64) -> Option<u64> {
-    let total = u128::from(used) + u128::from(available);
-    (total != 0).then(|| u64::try_from((u128::from(used) * 100).div_ceil(total)).unwrap_or(100))
+fn percent(used: u64, available: i128) -> Option<i128> {
+    let total = i128::from(used).saturating_add(available);
+    if total <= 0 {
+        return None;
+    }
+    let scaled = i128::from(used) * 100;
+    Some(scaled / total + i128::from(scaled % total != 0))
 }
 
 fn size_heading(size: Size, portable: bool) -> String {
@@ -167,9 +176,20 @@ fn size_heading(size: Size, portable: bool) -> String {
     format!("{bytes}B-blocks")
 }
 
-fn format_size(bytes: u64, size: Size) -> String {
+fn format_size(amount: i128, size: Size) -> String {
+    let rendered = format_magnitude(amount.unsigned_abs(), size);
+    if amount < 0 {
+        format!("-{rendered}")
+    } else {
+        rendered
+    }
+}
+
+fn format_magnitude(bytes: u128, size: Size) -> String {
     let base = match size {
-        Size::Blocks(block, suffix) => return format!("{}{suffix}", bytes.div_ceil(block)),
+        Size::Blocks(block, suffix) => {
+            return format!("{}{suffix}", bytes.div_ceil(u128::from(block)))
+        }
         Size::Binary => 1024,
         Size::Si => 1000,
     };
@@ -185,7 +205,7 @@ fn format_size(bytes: u64, size: Size) -> String {
         scale *= base;
         suffix = unit;
     }
-    let tenths = (u128::from(bytes) * 10).div_ceil(u128::from(scale));
+    let tenths = (bytes / scale) * 10 + ((bytes % scale) * 10).div_ceil(scale);
     if tenths < 100 {
         format!("{}.{}{suffix}", tenths / 10, tenths % 10)
     } else {
@@ -222,21 +242,37 @@ pub(super) fn df(
     output: &mut impl Write,
 ) -> io::Result<()> {
     let fields = columns(Command::Df, layout);
-    let mut formatted: Vec<Vec<String>> = Vec::with_capacity(rows.len() + 1);
+    let mut formatted: Vec<Vec<Cow<'_, [u8]>>> = Vec::with_capacity(rows.len() + 1);
     formatted.push(
         fields
             .iter()
-            .map(|column| column.headings(size, layout.portable, layout.columns.is_some()))
+            .map(|column| {
+                Cow::Owned(
+                    column
+                        .headings(size, layout.portable, layout.columns.is_some())
+                        .into_bytes(),
+                )
+            })
             .collect(),
     );
-    formatted.extend(
-        rows.iter()
-            .map(|row| fields.iter().map(|column| column.cell(row, size)).collect()),
-    );
+    formatted.extend(rows.iter().map(|row| {
+        fields
+            .iter()
+            .map(|column| {
+                if let Some(name) = column.text(row) {
+                    native_cell(name)
+                } else {
+                    Cow::Owned(column.cell(row, size).into_bytes())
+                }
+            })
+            .collect()
+    }));
+    let cell_width =
+        |cell: &[u8]| std::str::from_utf8(cell).map_or(cell.len(), UnicodeWidthStr::width);
     let mut widths = vec![0; fields.len()];
     for row in &formatted {
         for (width, cell) in widths.iter_mut().zip(row) {
-            *width = (*width).max(cell.width());
+            *width = (*width).max(cell_width(cell));
         }
     }
     for row in &formatted {
@@ -244,18 +280,32 @@ pub(super) fn df(
             if index != 0 {
                 output.write_all(b" ")?;
             }
-            let padding = widths[index].saturating_sub(cell.width());
+            let padding = widths[index].saturating_sub(cell_width(cell));
             if fields[index].numeric() {
-                write!(output, "{:padding$}{cell}", "")?;
-            } else if index + 1 == fields.len() {
-                write!(output, "{cell}")?;
-            } else {
-                write!(output, "{cell}{:padding$}", "")?;
+                write!(output, "{:padding$}", "")?;
+            }
+            output.write_all(cell)?;
+            if !fields[index].numeric() && index + 1 < fields.len() {
+                write!(output, "{:padding$}", "")?;
             }
         }
         output.write_all(b"\n")?;
     }
     Ok(())
+}
+
+fn native_cell(path: &OsStr) -> Cow<'_, [u8]> {
+    let bytes = path.as_encoded_bytes();
+    if bytes.iter().any(u8::is_ascii_control) {
+        Cow::Owned(
+            bytes
+                .iter()
+                .map(|&byte| if byte.is_ascii_control() { b'?' } else { byte })
+                .collect(),
+        )
+    } else {
+        Cow::Borrowed(bytes)
+    }
 }
 
 pub(super) fn duf(
@@ -316,15 +366,15 @@ pub(super) fn duf(
 
 #[derive(Serialize)]
 struct JsonRow<'a> {
-    device: &'a str,
+    device: Cow<'a, str>,
     device_type: &'a str,
-    mount_point: &'a str,
-    fs_type: &'a str,
+    mount_point: Cow<'a, str>,
+    fs_type: Cow<'a, str>,
     #[serde(rename = "type")]
-    filesystem_type: &'a str,
-    opts: &'a str,
+    filesystem_type: Cow<'a, str>,
+    opts: Cow<'a, str>,
     total: u64,
-    free: u64,
+    free: i128,
     used: u64,
     inodes: u64,
     inodes_free: u64,
@@ -337,12 +387,12 @@ impl<'a> From<&'a Row> for JsonRow<'a> {
     fn from(row: &'a Row) -> Self {
         let usage = row.usage.unwrap_or_default();
         Self {
-            device: &row.device,
+            device: row.device.to_string_lossy(),
             device_type: row.kind.name(),
-            mount_point: &row.target,
-            fs_type: &row.filesystem,
-            filesystem_type: &row.filesystem,
-            opts: &row.options,
+            mount_point: row.target.to_string_lossy(),
+            fs_type: row.filesystem.to_string_lossy(),
+            filesystem_type: row.filesystem.to_string_lossy(),
+            opts: row.options.to_string_lossy(),
             total: usage.size,
             free: usage.available,
             used: usage.used,
@@ -352,5 +402,33 @@ impl<'a> From<&'a Row> for JsonRow<'a> {
             blocks: usage.blocks,
             block_size: usage.block_size,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Column, Row, Size, Usage};
+    use crate::disk::Kind;
+
+    #[test]
+    fn preserves_negative_availability_in_the_value_and_percentage() {
+        let row = Row {
+            device: "full".into(),
+            target: "/test".into(),
+            filesystem: "ext4".into(),
+            file: "-".into(),
+            kind: Kind::Local,
+            options: "rw".into(),
+            usage: Some(Usage {
+                size: 500,
+                used: 300,
+                available: -25,
+                ..Usage::default()
+            }),
+        };
+        assert_eq!(Column::Available.cell(&row, Size::Blocks(1, "")), "-25");
+        assert_eq!(Column::Use.cell(&row, Size::Blocks(1, "")), "110%");
+        let json = serde_json::to_value(super::JsonRow::from(&row));
+        assert_eq!(json.ok().and_then(|row| row["free"].as_i64()), Some(-25));
     }
 }

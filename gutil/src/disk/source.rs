@@ -45,6 +45,7 @@ pub(super) struct Mount {
     pub(super) filesystem: OsString,
     pub(super) options: OsString,
     pub(super) identity: Option<OsString>,
+    pub(super) primary: bool,
     #[cfg(not(target_os = "linux"))]
     usage: Usage,
 }
@@ -53,7 +54,7 @@ pub(super) struct Mount {
 pub(super) struct Usage {
     pub(super) size: u64,
     pub(super) used: u64,
-    pub(super) available: u64,
+    pub(super) available: i128,
     pub(super) inodes: u64,
     pub(super) inodes_used: u64,
     pub(super) inodes_free: u64,
@@ -168,6 +169,7 @@ fn parse_mount(line: &[u8]) -> Option<Mount> {
         filesystem,
         options,
         identity: Some(identity),
+        primary: root == b"/",
     })
 }
 
@@ -200,13 +202,18 @@ pub(super) fn usage(mount: &Mount) -> io::Result<Usage> {
             .f_blocks
             .saturating_sub(info.f_bfree)
             .saturating_mul(block_size),
-        available: info.f_bavail.saturating_mul(block_size),
+        available: available_bytes(info.f_bavail, block_size),
         inodes: info.f_files,
         inodes_used: info.f_files.saturating_sub(info.f_ffree),
         inodes_free: info.f_ffree,
         blocks: info.f_blocks,
         block_size,
     })
+}
+
+#[cfg(target_os = "linux")]
+fn available_bytes(blocks: u64, size: u64) -> i128 {
+    i128::from(i64::from_ne_bytes(blocks.to_ne_bytes())) * i128::from(size)
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -229,10 +236,11 @@ pub(super) fn mounts() -> io::Result<Vec<Mount>> {
                 filesystem,
                 options: if disk.is_read_only() { "ro" } else { "rw" }.into(),
                 identity: disk.id().map(|id| id.to_string().into()),
+                primary: true,
                 usage: Usage {
                     size: disk.total_space(),
                     used: disk.total_space().saturating_sub(disk.available_space()),
-                    available: disk.available_space(),
+                    available: i128::from(disk.available_space()),
                     ..Usage::default()
                 },
             }
@@ -249,6 +257,27 @@ pub(super) fn usage(mount: &Mount) -> io::Result<Usage> {
         ));
     }
     Ok(mount.usage)
+}
+
+#[cfg(target_os = "linux")]
+pub(super) fn block_device_identity(path: &Path) -> Option<OsString> {
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
+
+    let metadata = std::fs::metadata(path).ok()?;
+    metadata.file_type().is_block_device().then(|| {
+        let device = metadata.rdev();
+        format!(
+            "{}:{}",
+            rustix::fs::major(device),
+            rustix::fs::minor(device)
+        )
+        .into()
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(super) const fn block_device_identity(_path: &Path) -> Option<OsString> {
+    None
 }
 
 #[cfg(target_os = "macos")]
@@ -316,5 +345,10 @@ mod tests {
         ] {
             assert_eq!(parse_mount(line).unwrap().kind, kind);
         }
+    }
+    #[test]
+    fn decodes_negative_kernel_availability() {
+        assert_eq!(super::available_bytes(u64::MAX - 1, 4096), -8192);
+        assert_eq!(super::available_bytes(5, 4096), 20480);
     }
 }
