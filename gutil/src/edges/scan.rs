@@ -129,24 +129,74 @@ fn suffix_records(
     count: u64,
     delimiter: u8,
 ) -> io::Result<()> {
-    let mut records: VecDeque<Vec<u8>> = VecDeque::new();
-    let mut record = Vec::new();
-    while input.read_until(delimiter, &mut record)? != 0 {
-        if records.len() as u64 == count {
-            if let Some(mut oldest) = records.pop_front() {
-                if edge == Edge::Head {
-                    output.write_all(&oldest)?;
+    let mut blocks = VecDeque::<(Vec<u8>, u64)>::new();
+    let mut buffer = Vec::new();
+    let mut delimiters = 0;
+    loop {
+        buffer.resize(BLOCK, 0);
+        let read = match input.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        };
+        buffer.truncate(read);
+        let found = memchr_iter(delimiter, &buffer).count() as u64;
+        blocks.push_back((std::mem::take(&mut buffer), found));
+        delimiters += found;
+
+        // Keep a separator before the selected suffix, even if the final byte
+        // turns out to be a delimiter terminating the last record.
+        while blocks
+            .front()
+            .is_some_and(|(_, found)| delimiters - found > count)
+        {
+            let Some((block, found)) = blocks.pop_front() else {
+                break;
+            };
+            delimiters -= found;
+            if edge == Edge::Head {
+                output.write_all(&block)?;
+            }
+            buffer = block;
+        }
+    }
+
+    let ends_with_delimiter = blocks
+        .back()
+        .is_some_and(|(block, _)| block.last() == Some(&delimiter));
+    let mut remaining = count;
+    for (index, (block, _)) in blocks.iter().enumerate().rev() {
+        let scan = if ends_with_delimiter && index + 1 == blocks.len() {
+            &block[..block.len() - 1]
+        } else {
+            block
+        };
+        for position in memrchr_iter(delimiter, scan) {
+            remaining -= 1;
+            if remaining == 0 {
+                let split = position + 1;
+                match edge {
+                    Edge::Head => {
+                        for (prefix, _) in blocks.iter().take(index) {
+                            output.write_all(prefix)?;
+                        }
+                        output.write_all(&block[..split])?;
+                    }
+                    Edge::Tail => {
+                        output.write_all(&block[split..])?;
+                        for (suffix, _) in blocks.iter().skip(index + 1) {
+                            output.write_all(suffix)?;
+                        }
+                    }
                 }
-                oldest.clear();
-                records.push_back(std::mem::replace(&mut record, oldest));
-                continue;
+                return Ok(());
             }
         }
-        records.push_back(std::mem::take(&mut record));
     }
     if edge == Edge::Tail {
-        for record in records {
-            output.write_all(&record)?;
+        for (block, _) in blocks {
+            output.write_all(&block)?;
         }
     }
     Ok(())
