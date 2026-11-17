@@ -127,7 +127,7 @@ impl Resolver {
         let cwd = if options.link_target {
             PathBuf::new()
         } else {
-            env::current_dir()?
+            canonical::current_directory()?
         };
         let base = |path: Option<&Path>| {
             path.map(|path| canonical::resolve(path, &cwd, options.mode))
@@ -149,11 +149,13 @@ impl Resolver {
             return fs::read_link(operand);
         }
         let path = canonical::resolve(operand, &self.cwd, self.mode)?;
-        if self
-            .relative_base
-            .as_ref()
-            .is_some_and(|base| !path.starts_with(base))
-        {
+        if self.relative_base.as_ref().is_some_and(|base| {
+            !path.starts_with(base)
+                || self
+                    .relative_to
+                    .as_ref()
+                    .is_some_and(|relative| !relative.starts_with(base))
+        }) {
             return Ok(path);
         }
         // A relative route is possible only within the same filesystem root.

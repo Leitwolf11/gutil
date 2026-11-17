@@ -248,8 +248,9 @@ operands and retain their order.
 | `readlink -v`, `--verbose` | Report path resolution errors. |
 | `-j N`, `--jobs N`, `--threads N` | Limit concurrent filesystem workers for larger operand batches. |
 
-When both relative options are present, `--relative-base` determines which
-paths qualify and `--relative-to` determines the starting directory. The
+With both relative options, paths qualify for relative output when
+the operand and `--relative-to` are both within `--relative-base`. The
+relative path starts at `--relative-to`. The
 commands exit with status `1` if one or more operands fail and keep
 processing the remaining operands. On Windows, resolved paths use native
 separators.
