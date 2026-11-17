@@ -79,3 +79,7 @@ harness = false
 [[bench]]
 name = "disk"
 harness = false
+
+[[bench]]
+name = "encoding"
+harness = false

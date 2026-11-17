@@ -181,9 +181,13 @@ impl Decoder {
         let quantum = self.base.encoded_block();
         let whole = bytes.len() / quantum * quantum;
         if self.length == 0 && whole != 0 {
-            if let Ok(written) = self.base.encoding().decode_mut(&bytes[..whole], scratch) {
-                output.write_all(&scratch[..written])?;
-                bytes = &bytes[whole..];
+            let encoding = self.base.encoding();
+            if let Ok(capacity) = encoding.decode_len(whole) {
+                if let Ok(written) = encoding.decode_mut(&bytes[..whole], &mut scratch[..capacity])
+                {
+                    output.write_all(&scratch[..written])?;
+                    bytes = &bytes[whole..];
+                }
             }
         }
         for &byte in bytes {
