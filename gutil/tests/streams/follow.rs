@@ -17,12 +17,7 @@ impl Drop for Following {
 }
 
 fn finish_after_stdout_closes(child: &mut Following, path: &Path) {
-    OpenOptions::new()
-        .append(true)
-        .open(path)
-        .unwrap()
-        .write_all(b"closed\n")
-        .unwrap();
+    let mut writer = OpenOptions::new().append(true).open(path).unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
         if let Some(status) = child.0.try_wait().unwrap() {
@@ -33,7 +28,10 @@ fn finish_after_stdout_closes(child: &mut Following, path: &Path) {
             std::time::Instant::now() < deadline,
             "tail kept running after its output closed"
         );
-        std::thread::sleep(Duration::from_millis(10));
+        // Keep providing data after the reader has closed so the test
+        // observes a write failure independently of the next polling cycle.
+        writer.write_all(b"closed\n").unwrap();
+        std::thread::sleep(Duration::from_millis(40));
     }
 }
 
