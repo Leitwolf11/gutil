@@ -726,7 +726,7 @@ dependencies = [
 
 [[package]]
 name = "gutil"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "ariadne",
  "criterion",
@@ -734,6 +734,7 @@ dependencies = [
  "insta",
  "jiff",
  "md-5",
+ "memchr",
  "parking_lot 0.13.0",
  "proptest",
  "reqwest",
@@ -750,6 +751,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "toml",
+ "unicode-width",
  "wasmi",
  "wasmi_wasi",
 ]
