@@ -117,7 +117,8 @@ pub(crate) fn run(
     match result.and_then(|status| output.flush().map(|()| status).map_err(Error::from)) {
         Ok(status) => Ok(status),
         Err(Error::Io(error))
-            if error.kind() == io::ErrorKind::BrokenPipe && command != Command::Yes =>
+            if error.kind() == io::ErrorKind::BrokenPipe
+                && !matches!(command, Command::Yes | Command::Printenv) =>
         {
             Err(error)
         }

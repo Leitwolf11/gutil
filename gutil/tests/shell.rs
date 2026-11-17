@@ -269,3 +269,18 @@ fn handles_output_errors_for_non_pipe_destinations() {
         assert!(String::from_utf8_lossy(&output.stderr).contains(utility));
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn printenv_returns_two_for_a_closed_output_pipe() {
+    let mut child = command(&["printenv", "GUTIL_CLOSED_PIPE"])
+        .env("GUTIL_CLOSED_PIPE", "x".repeat(100 * 1024))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    let output = child.wait_with_output().unwrap();
+    expect(&output, 2, b"");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("gutil printenv"));
+}
