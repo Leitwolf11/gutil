@@ -215,6 +215,11 @@ pub(super) fn parse(
             options.paths.push(arg.into());
             continue;
         }
+        // The upstream duf spelling -json shares the -j worker prefix.
+        if command == Command::Duf && bytes == b"-json" {
+            options.layout.duf.json = true;
+            continue;
+        }
         if let Some(count) = jobs::option(bytes, &mut args) {
             options.workers = count?;
             continue;
