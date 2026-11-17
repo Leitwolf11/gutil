@@ -139,6 +139,27 @@ impl Drop for Following {
     }
 }
 
+fn finish_after_stdout_closes(child: &mut Following, path: &Path) {
+    OpenOptions::new()
+        .append(true)
+        .open(path)
+        .unwrap()
+        .write_all(b"closed\n")
+        .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(status) = child.0.try_wait().unwrap() {
+            assert!(status.success(), "{status}");
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "tail kept running after its output closed"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 #[test]
 fn follows_appended_bytes_and_a_replaced_file_by_name() {
     let directory = tempfile::tempdir().unwrap();
@@ -155,8 +176,9 @@ fn follows_appended_bytes_and_a_replaced_file_by_name() {
         );
         let reader = BufReader::new(child.0.stdout.take().unwrap());
         let (sender, receiver) = mpsc::channel();
+        let lines = usize::from(follow == "-F") + 2;
         let copy = std::thread::spawn(move || {
-            for line in reader.lines() {
+            for line in reader.lines().take(lines) {
                 if sender.send(line.unwrap()).is_err() {
                     break;
                 }
@@ -176,8 +198,8 @@ fn follows_appended_bytes_and_a_replaced_file_by_name() {
             fs::write(&target, b"replacement\n").unwrap();
             assert_eq!(next(), "replacement");
         }
-        drop(child);
         copy.join().unwrap();
+        finish_after_stdout_closes(&mut child, &target);
     }
 }
 
@@ -283,6 +305,13 @@ fn reports_follow_failure_after_a_named_file_disappears() {
             expected
         );
     }
+    fs::write(path.join("first"), b"x\n").unwrap();
+    assert_eq!(receiver.recv_timeout(Duration::from_secs(5)).unwrap(), "");
+    assert_eq!(
+        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        "==> first <=="
+    );
+    assert_eq!(receiver.recv_timeout(Duration::from_secs(5)).unwrap(), "x");
     fs::rename(path.join("first"), path.join("old-first")).unwrap();
     OpenOptions::new()
         .append(true)
@@ -290,6 +319,11 @@ fn reports_follow_failure_after_a_named_file_disappears() {
         .unwrap()
         .write_all(b"still following\n")
         .unwrap();
+    assert_eq!(receiver.recv_timeout(Duration::from_secs(5)).unwrap(), "");
+    assert_eq!(
+        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        "==> second <=="
+    );
     assert_eq!(
         receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
         "still following"
@@ -332,7 +366,7 @@ fn retries_a_missing_tail_operand_and_reads_truncated_files_from_the_start() {
         .unwrap()
         .contains("file"));
     let reader = std::thread::spawn(move || {
-        for line in output.lines() {
+        for line in output.lines().take(2) {
             if sender.send(line.unwrap()).is_err() {
                 break;
             }
@@ -348,9 +382,9 @@ fn retries_a_missing_tail_operand_and_reads_truncated_files_from_the_start() {
         receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
         "short"
     );
-    drop(child);
     diagnostic.join().unwrap();
     reader.join().unwrap();
+    finish_after_stdout_closes(&mut child, &path.join("file"));
 }
 
 #[cfg(target_os = "linux")]
@@ -448,4 +482,120 @@ fn displays_each_command_help_and_version_and_checks_options() {
             assert_eq!(run(path, &[utility, flag], b"").status.code(), Some(1));
         }
     }
+}
+
+#[test]
+fn recognizes_long_and_legacy_edge_options_and_keeps_pipe_boundaries() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    verify(
+        run(path, &["head", "--jobs=1", "-2", "--silent"], b"a\nb\nc\n"),
+        b"a\nb\n",
+    );
+    verify(
+        run(
+            path,
+            &["head", "--zero-terminated", "--verbose", "-n1"],
+            b"a\0b",
+        ),
+        b"==> standard input <==\na\0",
+    );
+    let bytes = vec![b'x'; 1200];
+    verify(run(path, &["head", "-c1b"], &bytes), &bytes[..512]);
+    verify(run(path, &["tail", "-c1KB"], &bytes), &bytes[..1000]);
+    verify(
+        run(path, &["tail", "--follow=descriptor", "-n0"], b"a\nb"),
+        b"",
+    );
+    for utility in ["head", "tail"] {
+        assert_eq!(run(path, &[utility, "-p"], b"").status.code(), Some(1));
+    }
+
+    let mut records = b"first record\n".repeat(10000);
+    records.extend(b"last record");
+    let expected = records.len() - b"first record\nlast record".len();
+    verify(run(path, &["head", "-n-2"], &records), &records[..expected]);
+    fs::write(path.join("empty"), []).unwrap();
+    verify(run(path, &["head", "-n-1", "empty"], b""), b"");
+}
+
+#[test]
+fn validates_count_file_lists_and_preserves_explicit_progress() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    fs::write(path.join("-input"), b"two words\n").unwrap();
+    verify(
+        run(
+            path,
+            &[
+                "wc",
+                "--threads=1",
+                "-lj1",
+                "--chars",
+                "--words",
+                "--max-line-length",
+                "--total",
+                "auto",
+                "--",
+                "-input",
+            ],
+            b"",
+        ),
+        b" 1  2 10  9 -input\n",
+    );
+    let progress = Command::new(env!("CARGO_BIN_EXE_gutil"))
+        .current_dir(path)
+        .env("LC_ALL", "C")
+        .args([
+            "--no-config",
+            "--color=never",
+            "--progress=always",
+            "wc",
+            "-c",
+            "--",
+            "-input",
+        ])
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&progress.stderr).contains("bytes"));
+    verify(progress, b"10 -input\n");
+    for args in [
+        &["wc", "-x"][..],
+        &["wc", "--total=bogus"],
+        &["wc", "--files0-from=nonexistent"],
+    ] {
+        assert_eq!(run(path, args, b"").status.code(), Some(1));
+    }
+    let manifest = run(path, &["wc", "--files0-from=-", "-l"], b"\0-input\0");
+    assert_eq!(manifest.status.code(), Some(1));
+    assert_eq!(manifest.stdout, b" 1 -input\n 1 total\n");
+    assert!(String::from_utf8_lossy(&manifest.stderr).contains("empty file name"));
+    let directory_name = run(path, &["wc", "-c", "."], b"");
+    assert_eq!(directory_name.status.code(), Some(1));
+    assert_eq!(directory_name.stdout, b"");
+}
+
+#[cfg(unix)]
+#[test]
+fn retains_native_bytes_in_a_count_file_list() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    // Passing an invalidly encoded operand should fail as an option, without
+    // requiring support for invalid bytes in on-disk names.
+    let unknown = command(path, &["wc"])
+        .arg(OsStr::from_bytes(b"--\xff"))
+        .output()
+        .unwrap();
+    assert_eq!(unknown.status.code(), Some(1));
+    if cfg!(target_vendor = "apple") {
+        return;
+    }
+    fs::write(path.join(OsStr::from_bytes(b"name\xff")), b"x").unwrap();
+    verify(
+        run(path, &["wc", "-c", "--files0-from=-"], b"name\xff\0"),
+        b"1 name\xff\n",
+    );
 }
