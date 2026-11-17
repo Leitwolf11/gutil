@@ -260,6 +260,47 @@ gutil readlink -n current
 gutil realpath -e --relative-to=. ./src/../README.md
 ```
 
+## Shell and system utilities
+
+`true` returns status `0` and `false` returns status `1`. Both ignore
+operands and recognize `--help` or `--version` when passed alone.
+
+`echo [-n] [-e|-E] [STRING]...` writes strings separated by spaces. Use
+`-n` to omit the final newline, `-e` to interpret escapes, and `-E` to
+preserve backslashes. These options may be grouped and precede the operands.
+Escapes include control characters, octal and hexadecimal bytes, and
+`\c` to stop output immediately. With `POSIXLY_CORRECT` set, escapes are
+always enabled and options are recognized when the first argument is `-n`.
+
+`yes [--] [STRING]...` repeats a line containing all operands or `y`
+when none are given. Use `--` before operands that look like options.
+A closed pipe ends the command with status `1`.
+
+`printenv [-0|--null] [VARIABLE]...` writes selected values in operand order
+or the complete environment as name-value pairs when invoked without
+operands. The exit status is `1` when a requested variable is missing and
+`2` on option or output errors. Use `-0` for NUL delimiters.
+
+`nproc [--all] [--ignore=N]` reports the number of processing units
+available to the process. Explicit values in `OMP_NUM_THREADS` and
+`OMP_THREAD_LIMIT` override and cap the count, respectively. `--all`
+ignores these variables and reads the installed CPU count on Linux. On
+other platforms or when Linux CPU inventory is unavailable, it reports
+the platform's available processor count. `--ignore` subtracts from the
+result without reducing it below one.
+
+`sleep NUMBER[SUFFIX]...` waits for the sum of nonnegative durations.
+Use `s`, `m`, `h`, or `d` for seconds, minutes, hours, or days. Unsuffixed
+values are seconds. Fractional decimal and hexadecimal values are
+supported. A positive infinite duration waits until interrupted.
+
+```sh
+gutil echo -e 'name\tvalue'
+gutil printenv -0 HOME PATH
+gutil nproc --ignore=1
+gutil sleep 0.25s 0.5s
+```
+
 ## fd
 
 `gutil fd [OPTIONS] [PATTERN] [PATH]...` recursively searches directories.

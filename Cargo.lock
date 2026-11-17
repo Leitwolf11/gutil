@@ -774,7 +774,7 @@ dependencies = [
 
 [[package]]
 name = "gutil"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "ariadne",
  "criterion",
@@ -790,6 +790,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rustc-hash",
+ "rustix 1.1.6",
  "rusty-rich",
  "same-file",
  "serde",

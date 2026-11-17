@@ -1,6 +1,6 @@
 [package]
 name = "gutil"
-version = "0.10.0"
+version = "0.11.0"
 edition.workspace = true
 description = "A single-binary, cross-platform reimplementation of GNU coreutils"
 license.workspace = true
@@ -37,6 +37,9 @@ ignore = "0.4"
 globset = "0.4"
 regex = "1"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { version = "1.1", features = ["fs"] }
+
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false }
 insta = "1"
@@ -59,6 +62,10 @@ harness = false
 
 [[bench]]
 name = "paths"
+harness = false
+
+[[bench]]
+name = "shell"
 harness = false
 
 [[bench]]
