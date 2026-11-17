@@ -1,6 +1,6 @@
 [package]
 name = "gutil"
-version = "0.12.0"
+version = "0.13.0"
 edition.workspace = true
 description = "A single-binary, cross-platform reimplementation of GNU coreutils"
 license.workspace = true
@@ -11,6 +11,7 @@ categories = ["command-line-utilities"]
 
 [dependencies]
 ariadne = "0.6"
+data-encoding = "2"
 gutil-plugin-sdk = { path = "../gutil-plugin-sdk", version = "0.1.0" }
 jiff = { version = "0.2", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo", "tzdb-bundle-platform"] }
 md-5 = { version = "0.11", default-features = false }
