@@ -104,3 +104,42 @@ The local cache is enabled by default. An enabled remote cache can serve local m
 plug-in from GitHub. `gutil plug-in use COMMAND [ARGUMENTS]...` runs the
 installed command and forwards every remaining argument to it.
 [Plug-in installation and SDK](plug-ins.md)
+
+## Checksums
+
+`md5sum`, `sha1sum`, `sha224sum`, `sha256sum`, `sha384sum`, and
+`sha512sum` print or verify checksums. With no operands or a `-` operand,
+the command reads stdin.
+
+```sh
+gutil sha256sum first.bin second.bin > SHA256SUMS
+gutil sha256sum --check SHA256SUMS
+gutil --jobs=4 --progress=never sha512sum first.bin second.bin
+```
+
+| Option | Behavior |
+| --- | --- |
+| `-b`, `--binary` | Mark generated records as binary. |
+| `-t`, `--text` | Mark generated records as text. This is the default. |
+| `--tag` | Write BSD-style records, for example `SHA256 (file) = digest`. |
+| `-z`, `--zero` | Terminate generated records with NUL and write raw file names. |
+| `-c`, `--check` | Verify GNU-style or BSD-style newline-delimited records. |
+| `--ignore-missing` | Skip missing files. At least one listed file must verify successfully. |
+| `--quiet` | Suppress successful verification records. |
+| `--status` | Suppress verification records and summaries. Read errors still appear on stderr. |
+| `--strict` | Fail when a checksum list contains malformed records. |
+| `-w`, `--warn` | Report each malformed record with its line number. |
+| `--` | Treat subsequent arguments as file operands. |
+
+Files are hashed as bytes on every platform, including in text mode. GNU-style
+records escape backslashes, carriage returns, and newlines in file names.
+Verification preserves native filename bytes on Unix and reads UTF-8 filenames
+on Windows. Verification status lines use checksum record escaping for file
+names that contain backslashes or line breaks. MD5 and SHA-1 are available for
+compatibility with existing manifests.
+
+Multiple regular-file operands totaling at least 1 MiB can be hashed
+concurrently when progress output is disabled. Output follows the original
+operand order. Verification and stream input are processed sequentially.
+Checksum commands return `1` on input, verification, or option errors and
+`0` on success.

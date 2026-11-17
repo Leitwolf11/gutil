@@ -27,3 +27,19 @@ Compare timings from the same run. Long-format results include metadata formatti
 ## Recorded results
 
 - [2026-11-09 · Linux x86-64 · ls](bench-results/2026-11-09-linux-x86-64-ls.md)
+
+## Checksum throughput
+
+From the repository root, use a directory containing the GNU `md5sum`,
+`sha1sum`, `sha224sum`, `sha256sum`, `sha384sum`, and `sha512sum` binaries
+to compare all checksum commands.
+
+```sh
+TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin cargo bench --locked -p gutil --bench checksum
+```
+
+Criterion measures three invocations per algorithm over the same four 16 MiB
+files. The gutil runs use one and four workers. The GNU run uses the standalone
+utility. Each timed iteration includes process startup and discards stdout.
+The harness compares the emitted checksum records byte for byte before timing.
+Omit `GNU_COREUTILS_DIR` to compare the gutil worker settings by themselves.

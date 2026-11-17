@@ -2,6 +2,8 @@
 
 gutil is a Rust 2021 project to reimplement GNU coreutils as a single executable for Linux, macOS, and Windows. GNU compatibility and lower runtime are project goals. gutil includes `ls` for directory listings, `cat` for concatenating files and standard input, `pwd` for printing the working directory, and `cache` for storing and retrieving files by SHA-256 digest.
 
+gutil also includes the MD5, SHA-1, and SHA-2 checksum utilities.
+
 The name gutil has no expanded form.
 
 ## Install
@@ -30,6 +32,7 @@ Filesystem work runs on a Tokio blocking pool. Use `-j N`, `--jobs N`, or `--thr
 - [Local and remote cache](docs/configuration.md#cache)
 - [Plug-ins and the Rust SDK](docs/plug-ins.md)
 - [Benchmark methodology and results](docs/benchmarking.md)
+- [Coreutils coverage](docs/coreutils-coverage.md)
 
 ## Development
 

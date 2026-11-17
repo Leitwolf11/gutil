@@ -1,5 +1,6 @@
 mod cache;
 mod cat;
+mod checksum;
 mod config;
 mod jobs;
 mod ls;
@@ -16,7 +17,7 @@ use presentation::Presentation;
 use std::io::{self, BufWriter, IsTerminal, Write};
 use std::process::ExitCode;
 
-const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
+const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  md5sum   Print or verify MD5 checksums\n  sha1sum  Print or verify SHA-1 checksums\n  sha224sum, sha256sum, sha384sum, sha512sum  Print or verify SHA-2 checksums\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
 
 fn main() -> ExitCode {
     // Discard argv[0] and preserve non-UTF-8 filesystem operands.
@@ -45,6 +46,7 @@ struct GlobalOptions {
 enum Command {
     Cache,
     Cat,
+    Checksum(checksum::Algorithm),
     Ls,
     Plugin,
     Pwd,
@@ -63,7 +65,7 @@ impl Command {
             Some("pwd") => Self::Pwd,
             Some("-h" | "--help") => Self::Help,
             Some("-V" | "--version") => Self::Version,
-            _ => Self::Unknown,
+            _ => checksum::Algorithm::parse(argument).map_or(Self::Unknown, Self::Checksum),
         }
     }
 }
@@ -131,8 +133,10 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         )?;
     }
 
-    if command == Command::Plugin {
-        return plugin::run(args, ui);
+    match command {
+        Command::Plugin => return plugin::run(args, ui),
+        Command::Checksum(algorithm) => return checksum::run(algorithm, args, job_count, ui),
+        _ => {}
     }
 
     if command == Command::Cat {
@@ -187,7 +191,12 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
 fn direct_help_or_version(command: Command, option: Option<&str>) -> bool {
     matches!(
         command,
-        Command::Cache | Command::Cat | Command::Ls | Command::Plugin | Command::Pwd
+        Command::Cache
+            | Command::Cat
+            | Command::Checksum(_)
+            | Command::Ls
+            | Command::Plugin
+            | Command::Pwd
     ) && (matches!(option, Some("--help" | "--version"))
         || (matches!(command, Command::Cache | Command::Plugin) && option == Some("-h")))
 }
