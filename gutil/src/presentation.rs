@@ -91,7 +91,7 @@ impl Presentation {
         final_only: bool,
     ) -> Option<ProgressReport> {
         let mode = self.progress_mode;
-        mode.enabled(self.terminal).then(|| ProgressReport {
+        self.progress_enabled().then(|| ProgressReport {
             presentation: self,
             command,
             unit,
@@ -102,6 +102,10 @@ impl Presentation {
             last: None,
             task: None,
         })
+    }
+
+    pub(crate) fn progress_enabled(self) -> bool {
+        self.progress_mode.enabled(self.terminal)
     }
 }
 
