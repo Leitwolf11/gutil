@@ -1,0 +1,4 @@
+[advisories]
+# rusty-rich 0.4.3 requires chrono. Remove this exemption when a compatible
+# rusty-rich release drops it. This advisory reports maintenance status.
+ignore = ["RUSTSEC-2026-0543"]
