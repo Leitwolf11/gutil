@@ -29,6 +29,7 @@ Compare timings from the same run. Long-format results include metadata formatti
 - [2026-11-09 · Linux x86-64 · ls](bench-results/2026-11-09-linux-x86-64-ls.md)
 - [2026-11-17 · Linux x86-64 · checksums](bench-results/2026-11-17-linux-x86-64-checksum.md)
 - [2026-11-17 · Linux x86-64 · streams and paths](bench-results/2026-11-17-linux-x86-64-streams.md)
+- [2026-11-17 · Linux x86-64 · file names and symbolic links](bench-results/2026-11-17-linux-x86-64-paths.md)
 
 ## Checksum throughput
 
@@ -60,3 +61,18 @@ stdout byte for byte before timing each GNU pair. Timed iterations include
 process startup and discard stdout. The piped `tail` workload includes
 copying the file into the child process's stdin. The `pwd` workload runs
 from the fixture directory and reads no fixture data.
+
+## Path commands
+
+Set `GNU_COREUTILS_DIR` to the directory containing GNU `basename`,
+`dirname`, `readlink`, and `realpath`.
+
+```sh
+TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin cargo bench --locked -p gutil --bench paths -- --noplot
+```
+
+Each release iteration passes 512 names to one process and discards stdout.
+The lexical commands receive regular-file names, and `realpath` resolves
+those paths on disk. On Unix, `readlink` reads 512 symbolic link targets.
+The harness checks byte-for-byte output parity and measures one and four
+gutil workers for filesystem lookups.

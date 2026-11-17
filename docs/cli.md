@@ -208,3 +208,54 @@ stdin for the list itself. The maximum line length total is the largest
 width across the inputs. Failed operands produce diagnostics while the
 remaining operands are counted. Exit status is `0` on success and `1`
 on argument or I/O errors.
+
+## basename and dirname
+
+`basename NAME [SUFFIX]` prints the last component of a path and optionally
+removes a matching suffix. A suffix matching the entire component is
+preserved. `-a` or `--multiple` accepts several names. `-s SUFFIX` or
+`--suffix=SUFFIX` supplies the suffix in that mode.
+`dirname NAME...` prints the directory portion of each name, using `.`
+for names without a directory component. Both commands support `-z` or
+`--zero` for NUL delimiters. Both work directly on operands and preserve
+native Unix filename bytes. Windows also recognizes the backslash separator,
+drive prefixes, and UNC share roots.
+
+```sh
+gutil basename -s .tar backup/first.tar backup/second.tar
+gutil dirname ./source/file.txt
+```
+
+## readlink and realpath
+
+`readlink` prints a symbolic link's stored target by default. `realpath`
+prints a canonical absolute path by default. Both accept multiple file
+operands and retain their order.
+
+| Option | Behavior |
+| --- | --- |
+| `readlink -f`, `realpath -E`, `--canonicalize` | Expand symbolic links and allow a missing final component. |
+| `-e`, `--canonicalize-existing` | Require all components to exist. |
+| `-m`, `--canonicalize-missing` | Allow missing or unavailable components. |
+| `realpath -L`, `--logical` | Process parent components before expanding symbolic links. |
+| `realpath -P`, `--physical` | Expand symbolic links in path order. This is the default. |
+| `realpath -s`, `--strip`, `--no-symlinks` | Normalize path components without expanding symbolic links. |
+| `realpath --relative-to=DIR` | Print paths relative to DIR when they share a filesystem root. |
+| `realpath --relative-base=DIR` | Use relative output for paths at or below DIR. |
+| `readlink -n`, `--no-newline` | Omit the output delimiter for a single operand. |
+| `-z`, `--zero` | Delimit the results with NUL bytes. |
+| `-q`, `--quiet` | Suppress path resolution errors. This is the default for `readlink` unless `POSIXLY_CORRECT` is set. |
+| `readlink -v`, `--verbose` | Report path resolution errors. |
+| `-j N`, `--jobs N`, `--threads N` | Limit concurrent filesystem workers for larger operand batches. |
+
+With both relative options, paths qualify for relative output when
+the operand and `--relative-to` are both within `--relative-base`. The
+relative path starts at `--relative-to`. The
+commands exit with status `1` if one or more operands fail and keep
+processing the remaining operands. On Windows, resolved paths use native
+separators.
+
+```sh
+gutil readlink -n current
+gutil realpath -e --relative-to=. ./src/../README.md
+```

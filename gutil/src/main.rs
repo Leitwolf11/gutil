@@ -6,6 +6,7 @@ mod edges;
 mod file_size;
 mod jobs;
 mod ls;
+mod paths;
 mod plugin;
 mod presentation;
 mod pwd;
@@ -20,7 +21,7 @@ use presentation::Presentation;
 use std::io::{self, BufWriter, IsTerminal, Write};
 use std::process::ExitCode;
 
-const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  head     Print the beginning of files\n  tail     Print the end of files\n  wc       Count lines, words, and bytes\n  md5sum   Print or verify MD5 checksums\n  sha1sum  Print or verify SHA-1 checksums\n  sha224sum, sha256sum, sha384sum, sha512sum  Print or verify SHA-2 checksums\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
+const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  basename  Print the final component of a path\n  dirname   Print the directory portion of a path\n  readlink  Print symbolic link targets\n  realpath  Print resolved paths\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  head     Print the beginning of files\n  tail     Print the end of files\n  wc       Count lines, words, and bytes\n  md5sum   Print or verify MD5 checksums\n  sha1sum  Print or verify SHA-1 checksums\n  sha224sum, sha256sum, sha384sum, sha512sum  Print or verify SHA-2 checksums\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
 
 fn main() -> ExitCode {
     // Discard argv[0] and preserve non-UTF-8 filesystem operands.
@@ -52,6 +53,7 @@ enum Command {
     Checksum(checksum::Algorithm),
     Edge(edges::Edge),
     Ls,
+    Path(paths::Command),
     Plugin,
     Pwd,
     Wc,
@@ -63,6 +65,10 @@ enum Command {
 impl Command {
     fn parse(argument: &OsStr) -> Self {
         match argument.to_str() {
+            Some("basename") => Self::Path(paths::Command::Basename),
+            Some("dirname") => Self::Path(paths::Command::Dirname),
+            Some("readlink") => Self::Path(paths::Command::Readlink),
+            Some("realpath") => Self::Path(paths::Command::Realpath),
             Some("cache") => Self::Cache,
             Some("cat") => Self::Cat,
             Some("head") => Self::Edge(edges::Edge::Head),
@@ -127,22 +133,17 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
     let job_count = options.jobs.unwrap_or_else(|| settings.global.job_count());
     let ui = Presentation::new(settings);
     if settings.diagnostics.verbosity == config::Verbosity::Verbose {
-        let source = loaded.path.as_ref().map_or_else(
-            || "built-in defaults".into(),
-            |path| path.display().to_string(),
-        );
-        let profile = options.profile.as_deref().unwrap_or("none");
-        ui.context(
-            &mut io::stderr(),
-            &format!(
-                "settings: {source}; profile: {profile}; jobs: {}",
-                job_count.get()
-            ),
+        report_settings(
+            loaded.path.as_ref(),
+            options.profile.as_deref(),
+            job_count,
+            ui,
         )?;
     }
 
     match command {
         Command::Plugin => return plugin::run(args, ui),
+        Command::Path(command) => return paths::run(command, args, job_count, ui),
         Command::Checksum(algorithm) => return checksum::run(algorithm, args, job_count, ui),
         Command::Edge(edge) => return edges::run(edge, args, job_count, ui),
         Command::Wc => return wc::run(args, job_count, ui),
@@ -198,6 +199,26 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
     }
 }
 
+fn report_settings(
+    path: Option<&PathBuf>,
+    profile: Option<&str>,
+    job_count: jobs::Count,
+    ui: Presentation,
+) -> io::Result<()> {
+    let source = path.map_or_else(
+        || "built-in defaults".into(),
+        |path| path.display().to_string(),
+    );
+    let profile = profile.unwrap_or("none");
+    ui.context(
+        &mut io::stderr(),
+        &format!(
+            "settings: {source}; profile: {profile}; jobs: {}",
+            job_count.get()
+        ),
+    )
+}
+
 fn direct_help_or_version(command: Command, option: Option<&str>) -> bool {
     matches!(
         command,
@@ -206,6 +227,7 @@ fn direct_help_or_version(command: Command, option: Option<&str>) -> bool {
             | Command::Checksum(_)
             | Command::Edge(_)
             | Command::Ls
+            | Command::Path(_)
             | Command::Plugin
             | Command::Pwd
             | Command::Wc
