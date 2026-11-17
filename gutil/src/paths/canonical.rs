@@ -77,12 +77,12 @@ pub(super) fn current_directory() -> io::Result<PathBuf> {
 }
 
 #[cfg(not(windows))]
-fn native_path(path: PathBuf) -> PathBuf {
+pub(crate) fn native_path(path: PathBuf) -> PathBuf {
     path
 }
 
 #[cfg(windows)]
-fn native_path(path: PathBuf) -> PathBuf {
+pub(crate) fn native_path(path: PathBuf) -> PathBuf {
     use std::path::Prefix;
 
     let mut components = path.components();

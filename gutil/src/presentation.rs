@@ -225,7 +225,7 @@ impl ProgressColumn for Description {
     }
 }
 
-fn safe_message(message: &str) -> Cow<'_, str> {
+pub(crate) fn safe_message(message: &str) -> Cow<'_, str> {
     let unsafe_control =
         |character: char| character.is_control() && !matches!(character, '\n' | '\t');
     if !message.chars().any(unsafe_control) {
