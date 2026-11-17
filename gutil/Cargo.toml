@@ -34,6 +34,9 @@ unicode-width = "0.2"
 wasmi = { version = "2", default-features = false, features = ["std", "validate", "auto-dispatch"] }
 wasmi_wasi = "2"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { version = "1.1", features = ["fs"] }
+
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false }
 insta = "1"

@@ -1,6 +1,6 @@
 use std::env;
 use std::ffi::OsString;
-use std::io::{self, Write};
+use std::io::{self, BufWriter, StdoutLock, Write};
 use std::iter::Peekable;
 
 use super::{posix, Command, Error, Info};
@@ -125,7 +125,7 @@ fn parse_digits(source: &mut &[u8], radix: u8, maximum: usize) -> Option<u8> {
 
 pub(super) fn yes(
     args: impl Iterator<Item = OsString>,
-    output: &mut impl Write,
+    output: &mut BufWriter<StdoutLock<'_>>,
 ) -> Result<(), Error> {
     let mut flags = true;
     let mut line = Vec::new();
@@ -155,20 +155,63 @@ pub(super) fn yes(
         line.push(b'y');
     }
     line.push(b'\n');
-    repeat(&line, output).map_err(Error::from)
+    let count = (64 * 1024 / line.len()).max(1);
+    let repeated;
+    let block = if count == 1 {
+        line.as_slice()
+    } else {
+        repeated = line.repeat(count);
+        &repeated
+    };
+    #[cfg(target_os = "linux")]
+    pipe_repeat(block, output.get_ref())?;
+    repeat(block, output).map_err(Error::from)
 }
 
-fn repeat(line: &[u8], output: &mut impl Write) -> io::Result<()> {
-    const BLOCK: usize = 64 * 1024;
-    let count = (BLOCK / line.len()).max(1);
-    if count == 1 {
-        loop {
-            output.write_all(line)?;
-        }
-    }
-    let block = line.repeat(count);
+fn repeat(block: &[u8], output: &mut impl Write) -> io::Result<()> {
     loop {
-        output.write_all(&block)?;
+        output.write_all(block)?;
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn pipe_repeat(block: &[u8], output: &StdoutLock<'_>) -> io::Result<()> {
+    use rustix::fs::{fstat, memfd_create, sendfile, FileType, MemfdFlags};
+    use rustix::io::Errno;
+
+    // sendfile can remap the same pages into a Linux pipe. Other output types
+    // and kernels that reject this transfer use the buffered writer.
+    if !fstat(output).is_ok_and(|stat| FileType::from_raw_mode(stat.st_mode) == FileType::Fifo) {
+        return Ok(());
+    }
+    let Ok(source) = memfd_create("gutil-yes", MemfdFlags::CLOEXEC) else {
+        return Ok(());
+    };
+    let mut source = std::fs::File::from(source);
+    if source.write_all(block).is_err() {
+        return Ok(());
+    }
+    let mut transferred = false;
+    let mut offset = 0;
+    loop {
+        let remaining = block.len() - usize::try_from(offset).map_err(io::Error::other)?;
+        match sendfile(output, &source, Some(&mut offset), remaining) {
+            Ok(0)
+            | Err(Errno::INVAL | Errno::NOSYS | Errno::OPNOTSUPP | Errno::PERM | Errno::ACCESS)
+                if !transferred =>
+            {
+                return Ok(())
+            }
+            Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
+            Ok(_) => {
+                transferred = true;
+                if offset == block.len() as u64 {
+                    offset = 0;
+                }
+            }
+            Err(Errno::INTR) => {}
+            Err(error) => return Err(error.into()),
+        }
     }
 }
 
