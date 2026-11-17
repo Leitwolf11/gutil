@@ -1,6 +1,6 @@
 use std::ffi::{OsStr, OsString};
 use std::fs::{File, Metadata};
-use std::io::{self, BufReader, BufWriter, Write};
+use std::io::{self, BufReader, BufWriter, Seek, Write};
 use std::path::{Path, PathBuf};
 
 use smallvec::SmallVec;
@@ -364,7 +364,7 @@ fn execute(
                 let metadata = file.metadata()?;
                 header(options, path, &mut previous_header, output)?;
                 scan_file(edge, options, &mut file, &metadata, output)?;
-                if options.follow.mode.is_some() {
+                if options.follow.mode.is_some() && metadata.is_file() {
                     followed.push(follow::Input::opened(path.clone(), file)?);
                 }
                 Ok(())
@@ -388,7 +388,7 @@ fn execute(
     }
     output.flush()?;
     if !followed.is_empty() {
-        follow::run(followed, options, ui, output, errors)?;
+        failed |= follow::run(followed, options, ui, output, errors)?;
     }
     Ok(u8::from(failed))
 }
@@ -400,8 +400,13 @@ fn scan_file(
     metadata: &Metadata,
     output: &mut impl Write,
 ) -> io::Result<()> {
-    if options.limit.origin == Origin::End && metadata.is_file() && metadata.len() != 0 {
-        return scan::seekable(edge, options, file, metadata.len(), output);
+    if options.limit.origin == Origin::End {
+        if let Some(length) = crate::file_size::verified_length(file, metadata) {
+            match scan::seekable(edge, options, file, length, output) {
+                Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => file.rewind()?,
+                result => return result,
+            }
+        }
     }
     scan::stream(edge, options, &mut BufReader::new(file), output)
 }

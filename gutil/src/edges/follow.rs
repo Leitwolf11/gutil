@@ -98,6 +98,12 @@ struct Open {
 
 impl Open {
     fn new(file: File) -> io::Result<Self> {
+        if !file.metadata()?.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "follow requires a regular file",
+            ));
+        }
         let identity = Handle::from_file(file.try_clone()?)?;
         Ok(Self { file, identity })
     }
@@ -149,10 +155,11 @@ pub(super) fn run(
     ui: Presentation,
     output: &mut impl Write,
     errors: &mut impl Write,
-) -> io::Result<()> {
+) -> io::Result<bool> {
     let Some(mode) = options.follow.mode else {
-        return Ok(());
+        return Ok(false);
     };
+    let mut failed = false;
     let mut buffer = [0u8; 16 * 1024];
     // The final initial header belongs to the last operand that opened successfully.
     let mut displayed = options
@@ -167,6 +174,7 @@ pub(super) fn run(
         })
         .cloned();
     while !inputs.is_empty() {
+        let mut full_block = false;
         let mut index = 0;
         while index < inputs.len() {
             let input = &mut inputs[index];
@@ -174,14 +182,12 @@ pub(super) fn run(
                 Ok(read) => {
                     input.warned = false;
                     if read != 0 {
+                        full_block |= read == buffer.len();
                         if displayed.as_ref() != Some(&input.path) {
                             header(options, &input.path, &mut displayed.is_some(), output)?;
                             displayed = Some(input.path.clone());
                         }
                         output.write_all(&buffer[..read])?;
-                        if let Some(opened) = &mut input.open {
-                            io::copy(&mut opened.file, output)?;
-                        }
                         output.flush()?;
                     }
                 }
@@ -195,6 +201,7 @@ pub(super) fn run(
                         input.warned = true;
                     }
                     if !options.follow.retry {
+                        failed = true;
                         inputs.remove(index);
                         continue;
                     }
@@ -202,9 +209,9 @@ pub(super) fn run(
             }
             index += 1;
         }
-        if !inputs.is_empty() {
+        if !inputs.is_empty() && !full_block {
             std::thread::sleep(options.follow.delay);
         }
     }
-    Ok(())
+    Ok(failed)
 }

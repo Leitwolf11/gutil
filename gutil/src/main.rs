@@ -3,6 +3,7 @@ mod cat;
 mod checksum;
 mod config;
 mod edges;
+mod file_size;
 mod jobs;
 mod ls;
 mod plugin;

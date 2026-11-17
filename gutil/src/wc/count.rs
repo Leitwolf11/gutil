@@ -20,7 +20,7 @@ impl Locale {
             .find_map(|key| env::var(key).ok().filter(|value| !value.is_empty()));
         let unicode = locale
             .as_deref()
-            .is_none_or(|value| !matches!(value, "C" | "POSIX"));
+            .is_some_and(|value| !matches!(value, "C" | "POSIX"));
         Self {
             unicode,
             gnu_space: env::var_os("POSIXLY_CORRECT").is_none(),
@@ -145,8 +145,11 @@ impl Counter {
         if self.metrics & WORDS != 0 {
             let space = matches!(character, ' ' | '\t'..='\r')
                 || (self.locale.unicode
-                    && (character.is_whitespace()
-                        || (self.locale.gnu_space && character == '\u{2060}')));
+                    && match character {
+                        '\u{00a0}' | '\u{2007}' | '\u{202f}' | '\u{2060}' => self.locale.gnu_space,
+                        '\u{0085}' => false,
+                        _ => character.is_whitespace(),
+                    });
             if space {
                 self.word = false;
             } else {

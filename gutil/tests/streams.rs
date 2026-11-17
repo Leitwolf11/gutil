@@ -245,3 +245,207 @@ fn decodes_utf8_across_read_blocks_and_counts_display_columns() {
         format!("2 2 {} {} {}\n", 65544, bytes.len(), 65541).as_bytes(),
     );
 }
+
+#[test]
+fn reports_follow_failure_after_a_named_file_disappears() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    fs::write(path.join("first"), b"first\n").unwrap();
+    fs::write(path.join("second"), b"second\n").unwrap();
+    let mut child = Following(
+        command(
+            path,
+            &[
+                "tail",
+                "--follow=name",
+                "--sleep-interval=0.01",
+                "first",
+                "second",
+            ],
+        )
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap(),
+    );
+    let output = BufReader::new(child.0.stdout.take().unwrap());
+    let (sender, receiver) = mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        for line in output.lines() {
+            if sender.send(line.unwrap()).is_err() {
+                break;
+            }
+        }
+    });
+    for expected in ["==> first <==", "first", "", "==> second <==", "second"] {
+        assert_eq!(
+            receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+            expected
+        );
+    }
+    fs::rename(path.join("first"), path.join("old-first")).unwrap();
+    OpenOptions::new()
+        .append(true)
+        .open(path.join("second"))
+        .unwrap()
+        .write_all(b"still following\n")
+        .unwrap();
+    assert_eq!(
+        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        "still following"
+    );
+    fs::rename(path.join("second"), path.join("old-second")).unwrap();
+    assert_eq!(
+        receiver.recv_timeout(Duration::from_secs(5)),
+        Err(mpsc::RecvTimeoutError::Disconnected)
+    );
+    assert_eq!(child.0.wait().unwrap().code(), Some(1));
+    let mut stderr = String::new();
+    std::io::Read::read_to_string(&mut child.0.stderr.take().unwrap(), &mut stderr).unwrap();
+    assert!(stderr.contains("first"));
+    assert!(stderr.contains("second"));
+    reader.join().unwrap();
+}
+
+#[test]
+fn retries_a_missing_tail_operand_and_reads_truncated_files_from_the_start() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    let mut child = Following(
+        command(path, &["tail", "--retry", "-f", "-s", "0.01", "file"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let output = BufReader::new(child.0.stdout.take().unwrap());
+    let mut diagnostics = BufReader::new(child.0.stderr.take().unwrap());
+    let (sender, receiver) = mpsc::channel();
+    let started = sender.clone();
+    let diagnostic = std::thread::spawn(move || {
+        let mut line = String::new();
+        diagnostics.read_line(&mut line).unwrap();
+        let _ = started.send(line);
+    });
+    assert!(receiver
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap()
+        .contains("file"));
+    let reader = std::thread::spawn(move || {
+        for line in output.lines() {
+            if sender.send(line.unwrap()).is_err() {
+                break;
+            }
+        }
+    });
+    fs::write(path.join("file"), b"contents before truncation\n").unwrap();
+    assert_eq!(
+        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        "contents before truncation"
+    );
+    fs::write(path.join("file"), b"short\n").unwrap();
+    assert_eq!(
+        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        "short"
+    );
+    drop(child);
+    diagnostic.join().unwrap();
+    reader.join().unwrap();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn counts_and_selects_bytes_from_virtual_files_with_synthetic_sizes() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    for virtual_file in ["/sys/devices/system/cpu/online", "/proc/self/status"] {
+        let Ok(input) = fs::read(virtual_file) else {
+            continue;
+        };
+        if virtual_file.starts_with("/proc") {
+            // Process status is process-dependent. Only compare within one child.
+            let output = run(path, &["wc", "-cm", virtual_file], b"");
+            assert!(output.status.success());
+            let rendered = String::from_utf8(output.stdout).unwrap();
+            let counts: Vec<_> = rendered.split_whitespace().take(2).collect();
+            assert_eq!(counts[0], counts[1]);
+            assert_ne!(counts[0], "0");
+            continue;
+        }
+        let length = input.len();
+        assert!(length > 1);
+        verify(
+            run(path, &["wc", "-c", virtual_file], b""),
+            format!("{length} {virtual_file}\n").as_bytes(),
+        );
+        verify(run(path, &["tail", "-n1", virtual_file], b""), &input);
+        verify(
+            run(path, &["tail", "-c1", virtual_file], b""),
+            &input[length - 1..],
+        );
+        verify(
+            run(path, &["head", "-c-1", virtual_file], b""),
+            &input[..length - 1],
+        );
+        verify(run(path, &["head", "-n-1", virtual_file], b""), b"");
+    }
+}
+
+#[test]
+fn counts_words_in_utf8_and_defaults_to_byte_characters_without_a_locale() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    fs::write(
+        path.join("input"),
+        "a\u{a0}b\u{2007}c\u{202f}d\u{2060}e\u{85}f",
+    )
+    .unwrap();
+    for (posix, expected) in [(false, b"5 11\n".as_slice()), (true, b"1 11\n")] {
+        let mut process = command(path, &["wc", "-wm", "--total=only", "input"]);
+        process
+            .env("LC_ALL", "C.UTF-8")
+            .env_remove("POSIXLY_CORRECT");
+        if posix {
+            process.env("POSIXLY_CORRECT", "1");
+        }
+        verify(process.output().unwrap(), expected);
+    }
+    fs::write(path.join("input"), b"a \xff b \xe2\x82").unwrap();
+    verify(
+        command(path, &["wc", "-wm", "--total=only", "input"])
+            .env("LC_ALL", "C.UTF-8")
+            .output()
+            .unwrap(),
+        b"4 5\n",
+    );
+    verify(
+        command(path, &["wc", "-m", "--total=only", "input"])
+            .env_remove("LC_ALL")
+            .env_remove("LC_CTYPE")
+            .env_remove("LANG")
+            .output()
+            .unwrap(),
+        b"8\n",
+    );
+}
+
+#[test]
+fn displays_each_command_help_and_version_and_checks_options() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    for utility in ["head", "tail", "wc"] {
+        let cli = format!("gutil {utility}");
+        let help = run(path, &[utility, "--help"], b"");
+        assert!(help.status.success());
+        assert!(String::from_utf8(help.stdout)
+            .unwrap()
+            .starts_with(&format!("Usage: {cli}")));
+        verify(
+            run(path, &[utility, "--version"], b""),
+            format!("{cli} {}\n", env!("CARGO_PKG_VERSION")).as_bytes(),
+        );
+        for flag in ["--unsupported", "-j0"] {
+            assert_eq!(run(path, &[utility, flag], b"").status.code(), Some(1));
+        }
+    }
+}

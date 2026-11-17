@@ -195,14 +195,15 @@ gutil wc -l --files0-from=paths.nul --total=only
 | `-l`, `--lines` | Count newline bytes. |
 | `-w`, `--words` | Count whitespace-delimited words. |
 | `-m`, `--chars` | Count characters. |
-| `-c`, `--bytes` | Count bytes. Regular files can use their reported size. |
+| `-c`, `--bytes` | Count bytes. Regular files can use their reported size when its boundary is readable. |
 | `-L`, `--max-line-length` | Measure the widest line in display columns, with eight-column tab stops. |
 | `--files0-from=FILE` | Read NUL-delimited file names. Use `-` to read the list from stdin. |
 | `--total=MODE` | Use `auto` for totals with multiple inputs, `always` to always show them, `only` to print the aggregate values, or `never` to suppress totals. |
 | `--` | Treat following arguments as file operands. |
 
-The C and POSIX locales count characters as bytes. Other locale settings
-use UTF-8 decoding and Unicode column widths. A stdin file list reserves
+An unset locale and the C and POSIX locales count characters as bytes.
+Other locale settings use UTF-8 decoding and Unicode column widths.
+`POSIXLY_CORRECT` excludes GNU-specific nonbreaking word separators. A stdin file list reserves
 stdin for the list itself. The maximum line length total is the largest
 width across the inputs. Failed operands produce diagnostics while the
 remaining operands are counted. Exit status is `0` on success and `1`

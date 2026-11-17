@@ -277,9 +277,9 @@ fn count_input(
         File::open(path).and_then(|mut file| {
             if metrics == BYTES {
                 let metadata = file.metadata()?;
-                if metadata.is_file() && metadata.len() != 0 {
+                if let Some(bytes) = crate::file_size::verified_length(&file, &metadata) {
                     return Ok(count::Counts {
-                        bytes: metadata.len(),
+                        bytes,
                         ..count::Counts::default()
                     });
                 }
