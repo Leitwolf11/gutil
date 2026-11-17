@@ -145,3 +145,65 @@ operand order. Verification and stream input are processed sequentially.
 If the checksum list comes from stdin, a record naming `-` is malformed.
 Checksum commands return `1` on input, verification, or option errors and
 `0` on success.
+
+## head and tail
+
+`head` prints the first 10 lines of each input. `tail` prints the last 10.
+With no file operands, or for a `-` operand, both read stdin. Input bytes
+are preserved, including a final record with no delimiter.
+
+```sh
+gutil head -n 20 report.txt
+gutil head --bytes=-512 archive.bin
+gutil tail -n +3 report.txt
+gutil tail -F --sleep-interval=0.25 application.log
+```
+
+| Option | Behavior |
+| --- | --- |
+| `-n N`, `--lines=N` | Select lines. With `-z`, select NUL-delimited records. |
+| `-c N`, `--bytes=N` | Select bytes. Units include `b` (512), `K` or `KiB` (1024), and `KB` (1000). |
+| `-q`, `--quiet`, `--silent` | Suppress file headers. |
+| `-v`, `--verbose` | Show file headers even for one input. The default shows headers for multiple operands. |
+| `-z`, `--zero-terminated` | Use NUL as the record delimiter. |
+| `-f`, `--follow[=descriptor]` | Poll an open regular file for new data. |
+| `--follow=name` | Poll a regular file by path and reopen it after replacement. |
+| `-F` | Follow by name and retry opening the file. |
+| `--retry` | Keep trying to open an unavailable file while following. |
+| `-s N`, `--sleep-interval=N` | Set the interval between follow polls in seconds. The default is one second. |
+| `--` | Treat following arguments as file operands. |
+
+A negative count tells `head` to omit the last N bytes or records. A leading
+`+` tells `tail` to begin at the given one-based position. Ordinary `tail`
+counts select from the end. Named regular files support follow mode. Stdin is
+read once. Operands are processed in order. Exit status is `0` on success
+and `1` on argument or I/O errors.
+
+## wc
+
+`wc` reports newline, word, and byte counts by default. Explicit count
+options select the requested columns. With no file operands, or for a `-`
+operand, it reads stdin.
+
+```sh
+gutil wc -lwm report.txt
+gutil wc -l --files0-from=paths.nul --total=only
+```
+
+| Option | Behavior |
+| --- | --- |
+| `-l`, `--lines` | Count newline bytes. |
+| `-w`, `--words` | Count whitespace-delimited words. |
+| `-m`, `--chars` | Count characters. |
+| `-c`, `--bytes` | Count bytes. Regular files can use their reported size. |
+| `-L`, `--max-line-length` | Measure the widest line in display columns, with eight-column tab stops. |
+| `--files0-from=FILE` | Read NUL-delimited file names. Use `-` to read the list from stdin. |
+| `--total=MODE` | Use `auto` for totals with multiple inputs, `always` to always show them, `only` to print the aggregate values, or `never` to suppress totals. |
+| `--` | Treat following arguments as file operands. |
+
+The C and POSIX locales count characters as bytes. Other locale settings
+use UTF-8 decoding and Unicode column widths. A stdin file list reserves
+stdin for the list itself. The maximum line length total is the largest
+width across the inputs. Failed operands produce diagnostics while the
+remaining operands are counted. Exit status is `0` on success and `1`
+on argument or I/O errors.

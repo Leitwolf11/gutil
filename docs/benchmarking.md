@@ -28,6 +28,7 @@ Compare timings from the same run. Long-format results include metadata formatti
 
 - [2026-11-09 · Linux x86-64 · ls](bench-results/2026-11-09-linux-x86-64-ls.md)
 - [2026-11-17 · Linux x86-64 · checksums](bench-results/2026-11-17-linux-x86-64-checksum.md)
+- [2026-11-17 · Linux x86-64 · streams and paths](bench-results/2026-11-17-linux-x86-64-streams.md)
 
 ## Checksum throughput
 
@@ -44,3 +45,18 @@ files. The gutil runs use one and four workers. The GNU run uses the standalone
 utility. Each timed iteration includes process startup and discards stdout.
 The harness compares the emitted checksum records byte for byte before timing.
 Omit `GNU_COREUTILS_DIR` to compare the gutil worker settings by themselves.
+
+## Stream and path commands
+
+Set `GNU_COREUTILS_DIR` to the directory containing GNU `head`, `tail`,
+`wc`, `cat`, and `pwd` to compare all stream and path workloads.
+
+```sh
+TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin cargo bench --locked -p gutil --bench streams -- --noplot
+```
+
+The fixture is a 64 MiB file of fixed-length lines. The harness compares
+stdout byte for byte before timing each GNU pair. Timed iterations include
+process startup and discard stdout. The piped `tail` workload includes
+copying the file into the child process's stdin. The `pwd` workload runs
+from the fixture directory and reads no fixture data.
