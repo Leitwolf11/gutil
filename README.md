@@ -35,6 +35,7 @@ Filesystem work runs on a Tokio blocking pool. Use `-j N`, `--jobs N`, or `--thr
 - [Plug-ins and the Rust SDK](docs/plug-ins.md)
 - [Benchmark methodology and results](docs/benchmarking.md)
 - [Coreutils coverage](docs/coreutils-coverage.md)
+- [Additional commands](docs/additional-commands.md)
 
 ## Development
 
