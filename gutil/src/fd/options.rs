@@ -1,5 +1,6 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use globset::{GlobBuilder, GlobMatcher};
 use ignore::{overrides::OverrideBuilder, DirEntry, WalkBuilder};
@@ -307,8 +308,33 @@ fn short_options(
 }
 
 enum Matcher {
-    Regex(Regex),
+    Regex(RegexMatcher),
     Glob(GlobMatcher),
+}
+
+struct RegexMatcher {
+    unicode: Regex,
+    bytes: OnceLock<Option<Regex>>,
+    insensitive: bool,
+}
+
+impl RegexMatcher {
+    fn is_match(&self, name: &[u8]) -> bool {
+        if std::str::from_utf8(name).is_ok() {
+            return self.unicode.is_match(name);
+        }
+        self.bytes
+            .get_or_init(|| {
+                RegexBuilder::new(self.unicode.as_str())
+                    .case_insensitive(self.insensitive)
+                    .unicode(false)
+                    .build()
+                    .ok()
+            })
+            .as_ref()
+            .unwrap_or(&self.unicode)
+            .is_match(name)
+    }
 }
 
 pub(super) struct Search {
@@ -334,6 +360,7 @@ impl Search {
             Matcher::Glob(
                 GlobBuilder::new(if pattern.is_empty() { "*" } else { pattern })
                     .case_insensitive(insensitive)
+                    .literal_separator(true)
                     .build()?
                     .compile_matcher(),
             )
@@ -343,11 +370,13 @@ impl Search {
                 Pattern::Exact => format!("\\A{}\\z", regex::escape(pattern)),
                 _ => pattern.to_owned(),
             };
-            Matcher::Regex(
-                RegexBuilder::new(&pattern)
+            Matcher::Regex(RegexMatcher {
+                unicode: RegexBuilder::new(&pattern)
                     .case_insensitive(insensitive)
                     .build()?,
-            )
+                bytes: OnceLock::new(),
+                insensitive,
+            })
         };
         if options.path.absolute {
             for root in &mut options.roots {
@@ -406,6 +435,9 @@ impl Search {
                 return None;
             }
         };
+        if self.options.output.show_errors {
+            errors.extend(entry.error().cloned());
+        }
         if entry.depth() == 0 || entry.depth() < self.options.min_depth || !self.accepts(&entry) {
             return None;
         }
