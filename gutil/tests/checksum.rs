@@ -156,13 +156,29 @@ fn respects_operand_order_option_end_and_command_help() {
     let parallel = checksum(path, &["--jobs=4", "md5sum", "--", "-left", "right"], b"");
     assert!(parallel.status.success());
     assert_eq!(parallel.stdout, sequential.stdout);
+    for workers in [&["--jobs=4"][..], &["--threads", "4"], &["-tj4"]] {
+        let args = [&["md5sum"][..], workers, &["--", "-left", "right"]].concat();
+        let result = checksum(path, &args, b"");
+        assert!(result.status.success());
+        assert_eq!(result.stdout, sequential.stdout);
+    }
+    let invalid_jobs = checksum(path, &["md5sum", "--jobs=0"], b"");
+    assert!(!invalid_jobs.status.success());
+    assert!(String::from_utf8_lossy(&invalid_jobs.stderr).contains("positive integer"));
     let failed = checksum(path, &["md5sum", "--", "missing", "-left"], b"");
     assert!(!failed.status.success());
     assert!(failed.stdout.ends_with(b"  -left\n"));
 
+    fs::write(
+        path.join("progress.toml"),
+        b"[diagnostics]\nformat = 'json'",
+    )
+    .unwrap();
     let progress = checksum(
         path,
         &[
+            "--config",
+            "progress.toml",
             "--progress=always",
             "md5sum",
             "--binary",
@@ -175,7 +191,11 @@ fn respects_operand_order_option_end_and_command_help() {
     );
     assert!(progress.status.success());
     assert_eq!(progress.stdout, sequential.stdout);
-    assert!(String::from_utf8_lossy(&progress.stderr).contains("bytes"));
+    let log = String::from_utf8_lossy(&progress.stderr);
+    let finished: serde_json::Value = serde_json::from_str(log.lines().last().unwrap()).unwrap();
+    assert_eq!(finished["unit"], "bytes");
+    assert_eq!(finished["completed"], 1024 * 1024 + 3);
+    assert_eq!(finished["finished"], true);
 
     fs::write(path.join("gutil.toml"), b"invalid toml").unwrap();
     for flag in ["--help", "--version"] {

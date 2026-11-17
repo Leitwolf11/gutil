@@ -69,7 +69,7 @@ pub(crate) fn run(
     jobs: jobs::Count,
     ui: Presentation,
 ) -> io::Result<u8> {
-    let options = match Options::parse(args) {
+    let (options, jobs) = match Options::parse(args, jobs) {
         Ok(Request::Help) => return help(algorithm),
         Ok(Request::Version) => {
             return writeln!(
@@ -80,7 +80,7 @@ pub(crate) fn run(
             )
             .map(|()| 0);
         }
-        Ok(Request::Run(options)) => options,
+        Ok(Request::Run(options, jobs)) => (options, jobs),
         Err(error) => {
             ui.error(&mut io::stderr(), algorithm.label(), &error.to_string())?;
             return Ok(1);
@@ -103,7 +103,7 @@ pub(crate) fn run(
 fn help(algorithm: Algorithm) -> io::Result<u8> {
     writeln!(
         io::stdout(),
-        "Usage: {} [OPTION]... [FILE]...\n\nPrint or check {} checksums. Read stdin when FILE is '-' or omitted.\n\n  -b, --binary      Mark generated records as binary\n  -c, --check       Verify files using a checksum list\n  -t, --text        Mark generated records as text\n  -z, --zero        Use NUL record terminators and raw file names\n      --tag         Write BSD-style records\n      --ignore-missing, --quiet, --status, --strict, -w, --warn\n      --help         Print help\n      --version      Print version",
+        "Usage: {} [OPTION]... [FILE]...\n\nPrint or check {} checksums. Read stdin when FILE is '-' or omitted.\n\n  -b, --binary      Mark generated records as binary\n  -c, --check       Verify files using a checksum list\n  -t, --text        Mark generated records as text\n  -z, --zero        Use NUL record terminators and raw file names\n      --tag         Write BSD-style records\n      --ignore-missing, --quiet, --status, --strict, -w, --warn\n  -j, --jobs, --threads N  Limit concurrent filesystem jobs\n      --help         Print help\n      --version      Print version",
         algorithm.label(),
         algorithm.tag(),
     )
@@ -150,19 +150,30 @@ enum ParseError {
     Option(OsString),
     #[error("{0}")]
     Conflict(&'static str),
+    #[error(transparent)]
+    Jobs(#[from] jobs::InvalidCount),
 }
 
 enum Request {
     Help,
     Version,
-    Run(Options),
+    Run(Options, jobs::Count),
 }
 
 impl Options {
-    fn parse(args: impl Iterator<Item = OsString>) -> Result<Request, ParseError> {
+    fn parse(
+        mut args: impl Iterator<Item = OsString>,
+        mut workers: jobs::Count,
+    ) -> Result<Request, ParseError> {
         let mut options = Self::default();
         let mut flags = true;
-        for arg in args {
+        while let Some(arg) = args.next() {
+            if flags {
+                if let Some(count) = jobs::option(arg.as_encoded_bytes(), &mut args) {
+                    workers = count?;
+                    continue;
+                }
+            }
             match arg.as_encoded_bytes() {
                 b"--" if flags => flags = false,
                 b"--help" if flags => return Ok(Request::Help),
@@ -183,7 +194,11 @@ impl Options {
                 b"--warn" if flags => options.flag(b'w'),
                 b"--zero" if flags => options.flag(b'z'),
                 [b'-', short @ ..] if flags && !short.is_empty() => {
-                    for &flag in short {
+                    for (index, &flag) in short.iter().enumerate() {
+                        if flag == b'j' {
+                            workers = jobs::short_value(&short[index + 1..], &mut args)?;
+                            break;
+                        }
                         if !b"bctwz".contains(&flag) {
                             return Err(ParseError::Option(arg));
                         }
@@ -197,7 +212,7 @@ impl Options {
         if options.files.is_empty() {
             options.files.push(PathBuf::from("-"));
         }
-        Ok(Request::Run(options))
+        Ok(Request::Run(options, workers))
     }
 
     fn flag(&mut self, flag: u8) {
@@ -293,7 +308,6 @@ fn write_results(
         errors: &mut stderr,
         ui,
         progress: ui.progress(algorithm.label(), "bytes", true),
-        transferred: 0,
         buffer: vec![0; BUFFER_SIZE],
     };
     let fail = if options.check {
@@ -314,17 +328,16 @@ fn write_results(
     Ok(u8::from(fail))
 }
 
-struct Checksum<'a> {
+struct Checksum<'a, W> {
     algorithm: Algorithm,
     output: &'a mut dyn Write,
-    errors: &'a mut io::StderrLock<'static>,
+    errors: &'a mut W,
     ui: Presentation,
     progress: Option<ProgressReport>,
-    transferred: u64,
     buffer: Vec<u8>,
 }
 
-impl Checksum<'_> {
+impl<W: Write> Checksum<'_, W> {
     fn generate(&mut self, options: &Options) -> io::Result<bool> {
         let mut fail = false;
         for path in &options.files {
@@ -340,13 +353,13 @@ impl Checksum<'_> {
         result: io::Result<String>,
         options: &Options,
     ) -> io::Result<bool> {
-        match result {
-            Ok(digest) => {
+        match result.and_then(|digest| Ok((digest, record::filename(path.as_os_str())?))) {
+            Ok((digest, name)) => {
                 record::write(
                     self.output,
                     self.algorithm,
                     digest.as_bytes(),
-                    path.as_os_str().as_encoded_bytes(),
+                    name,
                     options,
                 )?;
                 Ok(false)
@@ -368,8 +381,7 @@ impl Checksum<'_> {
     fn hash(&mut self, input: &mut dyn Read) -> io::Result<String> {
         digest(self.algorithm, input, &mut self.buffer, |read| {
             if let Some(progress) = &mut self.progress {
-                self.transferred = self.transferred.saturating_add(read);
-                progress.advance(self.transferred, self.errors);
+                progress.advance(read, self.errors);
             }
         })
     }

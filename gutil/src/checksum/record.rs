@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
@@ -133,5 +134,20 @@ pub(super) fn path(name: &[u8]) -> io::Result<PathBuf> {
         std::str::from_utf8(name)
             .map(PathBuf::from)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+    }
+}
+
+#[cfg_attr(unix, allow(clippy::unnecessary_wraps))]
+pub(super) fn filename(path: &OsStr) -> io::Result<&[u8]> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        Ok(path.as_bytes())
+    }
+    #[cfg(not(unix))]
+    {
+        path.to_str().map(str::as_bytes).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "file name is not valid UTF-8")
+        })
     }
 }

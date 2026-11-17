@@ -129,12 +129,13 @@ gutil --jobs=4 --progress=never sha512sum first.bin second.bin
 | `--status` | Suppress verification records and summaries. Read errors still appear on stderr. |
 | `--strict` | Fail when a checksum list contains malformed records. |
 | `-w`, `--warn` | Report each malformed record with its line number. |
+| `-j N`, `--jobs N`, `--threads N` | Limit concurrent filesystem jobs before or after the command name. |
 | `--` | Treat subsequent arguments as file operands. |
 
 Files are hashed as bytes on every platform, including in text mode. GNU-style
 records escape backslashes, carriage returns, and newlines in file names.
-Verification preserves native filename bytes on Unix and reads UTF-8 filenames
-on Windows. Verification status lines use checksum record escaping for file
+Unix records preserve native filename bytes. On Windows, filename encoding in
+records is UTF-8. Verification status lines use checksum record escaping for file
 names that contain backslashes or line breaks. MD5 and SHA-1 are available for
 compatibility with existing manifests.
 

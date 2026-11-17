@@ -1,10 +1,10 @@
 use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 
 use super::{record, Checksum, Options, Report, Verification};
 
-impl Checksum<'_> {
+impl<W: Write> Checksum<'_, W> {
     pub(super) fn verify(&mut self, options: &Options) -> io::Result<bool> {
         let mut fail = false;
         for path in &options.files {
