@@ -243,3 +243,24 @@ fn round_trips_native_filenames_with_escapes() {
     assert!(zero.stdout.ends_with(b"  file\\name\n\r\xff\0"));
     assert_ne!(zero.stdout[0], b'\\');
 }
+
+#[test]
+fn keeps_a_stdin_manifest_separate_from_data() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    let remaining = b"da39a3ee5e6b4b0d3255bfef95601890afd80709  missing\n";
+    let stdin_record = checksum(path, &["sha1sum"], remaining);
+    assert!(stdin_record.status.success());
+    let mut manifest = stdin_record.stdout.clone();
+    manifest.extend(remaining);
+
+    let rejected = checksum(path, &["sha1sum", "--check", "--warn"], &manifest);
+    assert_eq!(rejected.status.code(), Some(1));
+    assert_eq!(rejected.stdout, b"missing: FAILED open or read\n");
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains(": 1: improperly formatted"));
+
+    fs::write(path.join("manifest"), &stdin_record.stdout).unwrap();
+    let verified = checksum(path, &["sha1sum", "--check", "manifest"], remaining);
+    assert!(verified.status.success());
+    assert_eq!(verified.stdout, b"-: OK\n");
+}

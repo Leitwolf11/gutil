@@ -141,5 +141,6 @@ compatibility with existing manifests.
 Multiple regular-file operands totaling at least 1 MiB can be hashed
 concurrently when progress output is disabled. Output follows the original
 operand order. Verification and stream input are processed sequentially.
+If the checksum list comes from stdin, a record naming `-` is malformed.
 Checksum commands return `1` on input, verification, or option errors and
 `0` on success.
