@@ -273,13 +273,22 @@ fn matches(options: &Options, mount: &Mount) -> bool {
 
 fn find_mount(mounts: &[Mount], file: &Path) -> io::Result<usize> {
     let path = crate::paths::canonical::native_path(std::fs::canonicalize(file)?);
+    let identity = source::file_identity(&path);
+    let has_identity = |mount: &Mount| {
+        identity
+            .as_ref()
+            .is_some_and(|id| mount.identity.as_ref() == Some(id))
+    };
     mounts
         .iter()
         .enumerate()
-        .filter(|(_, mount)| path.starts_with(&mount.path) || mount.device == path.as_os_str())
+        .filter(|(_, mount)| {
+            path.starts_with(&mount.path) || mount.device == path.as_os_str() || has_identity(mount)
+        })
         .max_by_key(|(_, mount)| {
             (
                 mount.device == path.as_os_str(),
+                has_identity(mount),
                 mount.path.as_os_str().len(),
             )
         })

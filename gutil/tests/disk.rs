@@ -310,3 +310,19 @@ fn supports_short_filter_flags_and_duf_inode_sort_options() {
         .unwrap();
     assert!(success(output).contains("\x1b["));
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn maps_firmlinked_operands_to_the_same_volume_device() {
+    use std::os::unix::fs::MetadataExt;
+
+    let fixture = tempfile::tempdir().unwrap();
+    let path = fixture.path().to_str().unwrap();
+    let output = success(run("duf", &["--json", path]));
+    let mounts: Vec<Value> = serde_json::from_str(&output).unwrap();
+    let mount = mounts[0]["mount_point"].as_str().unwrap();
+    assert_eq!(
+        std::fs::metadata(mount).unwrap().dev(),
+        std::fs::metadata(fixture.path()).unwrap().dev()
+    );
+}

@@ -251,6 +251,22 @@ pub(super) fn usage(mount: &Mount) -> io::Result<Usage> {
     Ok(mount.usage)
 }
 
+#[cfg(target_os = "macos")]
+pub(super) fn file_identity(path: &Path) -> Option<OsString> {
+    use std::os::unix::fs::MetadataExt;
+
+    // APFS firmlinks can present files outside their mounted volume's path.
+    // sysinfo uses the same device ID for the mount root.
+    std::fs::metadata(path)
+        .ok()
+        .map(|metadata| metadata.dev().to_string().into())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(super) const fn file_identity(_path: &Path) -> Option<OsString> {
+    None
+}
+
 pub(super) fn sync() {
     #[cfg(target_os = "linux")]
     rustix::fs::sync();
