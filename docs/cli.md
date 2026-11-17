@@ -300,3 +300,46 @@ gutil printenv -0 HOME PATH
 gutil nproc --ignore=1
 gutil sleep 0.25s 0.5s
 ```
+
+## fd
+
+`gutil fd [OPTIONS] [PATTERN] [PATH]...` recursively searches directories.
+With no path operands, it searches the current directory. The default pattern
+is an empty regular expression, which matches every visible entry. Smart
+case uses case-insensitive matching unless the pattern contains an uppercase
+character. Results are written in native path order.
+
+```sh
+gutil fd -t f -e rs '^test' gutil
+gutil fd --glob '*.toml'
+gutil --jobs=4 fd -0 --exact Cargo.toml
+```
+
+| Option | Behavior |
+| --- | --- |
+| `-H`, `--hidden` | Include hidden names. |
+| `-I`, `--no-ignore` | Use every visible name regardless of ignore rules. |
+| `-u`, `--unrestricted` | Include hidden and ignored entries. |
+| `--no-ignore-vcs` | Ignore version-control rules while keeping `.ignore` and `.fdignore` rules active. |
+| `--no-require-git` | Honor `.gitignore` rules outside Git repositories. |
+| `--no-ignore-parent` | Skip ignore files outside the search roots. |
+| `-s`, `-i` | Force case-sensitive or case-insensitive matching. |
+| `-g`, `--glob` | Interpret the search pattern as a glob. |
+| `-F`, `--fixed-strings` | Match a literal substring. |
+| `--exact` | Match the complete name literally. |
+| `-p`, `--full-path` | Match against the absolute path instead of the final component. |
+| `-a`, `--absolute-path` | Write absolute paths. |
+| `-0`, `--print0` | End names with NUL bytes. An implicit relative search includes the current-directory prefix. |
+| `-L`, `--follow` | Traverse directory symbolic links. |
+| `-d N`, `--max-depth N` | Limit search depth relative to each root. |
+| `--min-depth N`, `--exact-depth N` | Filter results by depth. |
+| `-t TYPE`, `--type TYPE` | Match files, directories, or symbolic links. Repeat to select several types. |
+| `-e EXT`, `--extension EXT` | Match extensions without regard to ASCII case. Repeat to select several extensions. |
+| `-E GLOB`, `--exclude GLOB` | Skip entries matching a glob. |
+| `-q`, `--quiet` | Write no results and exit with status `1` when no entries match. |
+| `--show-errors` | Report traversal errors to stderr. |
+| `-j N`, `--jobs N`, `--threads N` | Limit search workers. |
+
+Directory results end with a native path separator. Normal searches return
+`0` for a valid search even when there are no matches. Invalid options and
+searches with no usable root return `1`.

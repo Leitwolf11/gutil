@@ -31,6 +31,7 @@ Compare timings from the same run. Long-format results include metadata formatti
 - [2026-11-17 · Linux x86-64 · streams and paths](bench-results/2026-11-17-linux-x86-64-streams.md)
 - [2026-11-17 · Linux x86-64 · file names and symbolic links](bench-results/2026-11-17-linux-x86-64-paths.md)
 - [2026-11-17 · Linux x86-64 · shell and system utilities](bench-results/2026-11-17-linux-x86-64-shell.md)
+- [2026-11-17 · Linux x86-64 · file search](bench-results/2026-11-17-linux-x86-64-fd.md)
 
 ## Checksum throughput
 
@@ -90,3 +91,16 @@ TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin cargo bench --locked -p gutil --bench she
 The harness checks output and exit status for finite commands and the first
 8,192 output bytes from `yes`. Timed pipe runs drain 16 MiB before closing
 the reader. The report records the exact operands and environment.
+
+## File search
+
+Set `REFERENCE_FD` to the upstream fd executable to compare ignore-aware
+file search with one and four workers.
+
+```sh
+TMPDIR=/tmp REFERENCE_FD=/usr/bin/fd cargo bench --locked -p gutil --bench fd -- --noplot
+```
+
+Both implementations search the same tree and apply the same regular
+expression, extension, file type, and ignore rules. The harness verifies
+the matched path set before timing.
