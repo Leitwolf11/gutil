@@ -15,7 +15,7 @@ pub(super) enum Request {
 
 #[derive(Clone, Copy)]
 pub(super) enum Size {
-    Blocks(u64, bool),
+    Blocks(u64, &'static str),
     Binary,
     Si,
 }
@@ -76,7 +76,7 @@ pub(super) struct Options {
     pub(super) sync: bool,
     pub(super) layout: Layout,
     pub(super) filter: Filter,
-    pub(super) size: Size,
+    pub(super) size: Option<Size>,
 }
 
 impl Options {
@@ -89,7 +89,7 @@ impl Options {
             sync: false,
             layout: Layout::default(),
             filter: Filter::default(),
-            size: default_size(),
+            size: None,
         }
     }
 
@@ -97,8 +97,8 @@ impl Options {
         match flag {
             "all" => self.include_all = true,
             "inodes" => self.layout.inodes = true,
-            "human-readable" if command == Command::Df => self.size = Size::Binary,
-            "si" if command == Command::Df => self.size = Size::Si,
+            "human-readable" if command == Command::Df => self.size = Some(Size::Binary),
+            "si" if command == Command::Df => self.size = Some(Size::Si),
             "local" if command == Command::Df => self.filter.excluded_groups.push(Kind::Network),
             "portability" if command == Command::Df => self.layout.portable = true,
             "print-type" if command == Command::Df => self.layout.show_type = true,
@@ -116,7 +116,7 @@ impl Options {
         match flag {
             "output" => self.layout.columns = Some(columns(command, value)?),
             "block-size" => {
-                self.size = parse_size(value).ok_or_else(|| Error::Value(flag.into()))?;
+                self.size = Some(parse_size(value).ok_or_else(|| Error::Value(flag.into()))?);
             }
             "type" => self.filter.types.push(value.into()),
             "exclude-type" => self.filter.excluded_types.push(value.into()),
@@ -175,7 +175,7 @@ impl Options {
                 b'T' => "print-type",
                 b'v' => continue,
                 b'k' => {
-                    self.size = Size::Blocks(1024, true);
+                    self.size = Some(Size::Blocks(1024, ""));
                     continue;
                 }
                 b'j' => {
@@ -335,20 +335,22 @@ fn globs(list: &str) -> Result<GlobSet, Error> {
     Ok(builder.build()?)
 }
 
-fn default_size() -> Size {
+pub(super) fn default_size(portable: bool) -> Size {
+    let fallback = || {
+        let bytes = if env::var_os("POSIXLY_CORRECT").is_some() {
+            512
+        } else {
+            1024
+        };
+        Size::Blocks(bytes, "")
+    };
+    if portable {
+        return fallback();
+    }
     ["DF_BLOCK_SIZE", "BLOCK_SIZE", "BLOCKSIZE"]
         .into_iter()
         .find_map(|name| env::var(name).ok().and_then(|value| parse_size(&value)))
-        .unwrap_or_else(|| {
-            Size::Blocks(
-                if env::var_os("POSIXLY_CORRECT").is_some() {
-                    512
-                } else {
-                    1024
-                },
-                true,
-            )
-        })
+        .unwrap_or_else(fallback)
 }
 
 fn parse_size(value: &str) -> Option<Size> {
@@ -364,19 +366,34 @@ fn parse_size(value: &str) -> Option<Size> {
     } else {
         digits.parse().ok()?
     };
-    let multiplier = match suffix.as_bytes() {
+    let (multiplier, unit) = match suffix.as_bytes() {
         b"" if split == 0 => return None,
-        b"" | b"B" => 1,
+        b"" => (1, ""),
         [prefix, ending @ ..] => {
-            let power = b"KMGTPEZYRQ".iter().position(|unit| unit == prefix)? + 1;
-            let radix = match ending {
-                b"" | b"iB" => 1024u64,
-                b"B" => 1000u64,
+            let index = b"KMGTPEZYRQ"
+                .iter()
+                .position(|unit| *unit == prefix.to_ascii_uppercase())?;
+            let (radix, units) = match ending {
+                b"" => (1024u64, ["K", "M", "G", "T", "P", "E", "Z", "Y", "R", "Q"]),
+                b"iB" => (
+                    1024u64,
+                    [
+                        "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB", "RiB", "QiB",
+                    ],
+                ),
+                b"B" => (
+                    1000u64,
+                    ["kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB", "RB", "QB"],
+                ),
                 _ => return None,
             };
-            radix.checked_pow(u32::try_from(power).ok()?)?
+            (
+                radix.checked_pow(u32::try_from(index + 1).ok()?)?,
+                units[index],
+            )
         }
     };
     let bytes = amount.checked_mul(multiplier)?;
-    (bytes != 0).then_some(Size::Blocks(bytes, suffix.is_empty() || suffix == "K"))
+    let label = if digits.is_empty() { unit } else { "" };
+    (bytes != 0).then_some(Size::Blocks(bytes, label))
 }

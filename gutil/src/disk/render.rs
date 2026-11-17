@@ -57,13 +57,13 @@ impl Column {
         }
     }
 
-    fn headings(self, size: Size, portable: bool) -> String {
+    fn headings(self, size: Size, portable: bool, custom: bool) -> String {
         match self {
             Self::Source => "Filesystem",
             Self::Filesystem => "Type",
-            Self::Size => return size_heading(size),
+            Self::Size => return size_heading(size, portable),
             Self::Used => "Used",
-            Self::Available if portable => "Available",
+            Self::Available if !custom => "Available",
             Self::Available => "Avail",
             Self::Use if portable => "Capacity",
             Self::Use => "Use%",
@@ -110,7 +110,9 @@ impl Column {
 
     fn cell(self, row: &Row, size: Size) -> String {
         if let Some(text) = self.text(row) {
-            return crate::presentation::safe_message(text).into_owned();
+            return crate::presentation::safe_message(text)
+                .replace(['\n', '\r'], "\u{fffd}")
+                .replace('\t', " ");
         }
         let Some(usage) = row.usage else {
             return "-".into();
@@ -138,19 +140,36 @@ fn percent(used: u64, available: u64) -> Option<u64> {
     (total != 0).then(|| u64::try_from((u128::from(used) * 100).div_ceil(total)).unwrap_or(100))
 }
 
-fn size_heading(size: Size) -> String {
-    match size {
-        Size::Binary | Size::Si => "Size".into(),
-        Size::Blocks(1024, true) => "1K-blocks".into(),
-        Size::Blocks(512, true) => "512-blocks".into(),
-        Size::Blocks(1, _) => "1B-blocks".into(),
-        Size::Blocks(bytes, _) => format!("{bytes}-blocks"),
+fn size_heading(size: Size, portable: bool) -> String {
+    let Size::Blocks(bytes, _) = size else {
+        return "Size".into();
+    };
+    if portable {
+        return format!("{bytes}-blocks");
     }
+    for (base, units) in [
+        (1024, ["K", "M", "G", "T", "P", "E"]),
+        (1000, ["kB", "MB", "GB", "TB", "PB", "EB"]),
+    ] {
+        let mut scale = 1;
+        let mut prefix = None;
+        for unit in units {
+            scale *= base;
+            if bytes % scale != 0 {
+                break;
+            }
+            prefix = Some((scale, unit));
+        }
+        if let Some((scale, suffix)) = prefix {
+            return format!("{}{suffix}-blocks", bytes / scale);
+        }
+    }
+    format!("{bytes}B-blocks")
 }
 
 fn format_size(bytes: u64, size: Size) -> String {
     let base = match size {
-        Size::Blocks(block, _) => return bytes.div_ceil(block).to_string(),
+        Size::Blocks(block, suffix) => return format!("{}{suffix}", bytes.div_ceil(block)),
         Size::Binary => 1024,
         Size::Si => 1000,
     };
@@ -207,7 +226,7 @@ pub(super) fn df(
     formatted.push(
         fields
             .iter()
-            .map(|column| column.headings(size, layout.portable))
+            .map(|column| column.headings(size, layout.portable, layout.columns.is_some()))
             .collect(),
     );
     formatted.extend(
@@ -272,7 +291,7 @@ pub(super) fn duf(
         table = table.box_style(rusty_rich::box_drawing::BOX_ASCII.clone());
     }
     for field in &fields {
-        let mut column = RichColumn::new(field.headings(Size::Binary, false));
+        let mut column = RichColumn::new(field.headings(Size::Binary, false, true));
         if field.numeric() {
             column = column.justify(AlignMethod::Right);
         }
@@ -291,6 +310,7 @@ pub(super) fn duf(
     }
     let mut options = ConsoleOptions::default().update_width(width);
     options.ascii_only = layout.duf.ascii;
+    options.markup = false;
     writeln!(output, "{}", table.render(&options).to_ansi().trim_end())
 }
 

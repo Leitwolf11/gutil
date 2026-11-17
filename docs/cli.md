@@ -343,3 +343,63 @@ gutil --jobs=4 fd -0 --exact Cargo.toml
 Directory results end with a native path separator. Normal searches return
 `0` for a valid search even when there are no matches. Invalid options and
 searches with no usable root return `1`.
+
+## df and duf
+
+`gutil df [OPTIONS] [FILE]...` reports mounted filesystem space. Without
+operands, it reads the visible mount inventory. With operands, it reports
+the filesystem containing each file in operand order. Use `duf` for a
+rusty-rich table or a JSON inventory from the same mount data.
+
+### df output and filters
+
+| Option | Behavior |
+| --- | --- |
+| `-a`, `--all` | Include mounts with zero capacity, duplicate mounts, and rows with unavailable statistics. |
+| `-B SIZE`, `--block-size=SIZE` | Scale block counts, rounding up to the selected unit. The environment variables `DF_BLOCK_SIZE`, `BLOCK_SIZE`, and `BLOCKSIZE` supply the default in that order. |
+| `-h`, `--human-readable` | Use binary size prefixes. |
+| `-H`, `--si` | Use decimal size prefixes. |
+| `-i`, `--inodes` | Display inode counts when the platform supplies them. |
+| `-k` | Use 1024-byte blocks. |
+| `-l`, `--local` | Exclude network mounts. |
+| `-P`, `--portability` | Use POSIX column headings. |
+| `-T`, `--print-type` | Display filesystem types. |
+| `-t TYPE`, `--type=TYPE` | Include only the filesystem types specified. Repeat the option for additional types. |
+| `-x TYPE`, `--exclude-type=TYPE` | Exclude the filesystem type specified. |
+| `--output[=FIELDS]` | Select comma-separated columns from `source,fstype,itotal,iused,iavail,ipcent,size,used,avail,pcent,file,target`. Omitting FIELDS selects all columns. |
+| `--total` | Append the total across the printed rows. |
+| `--sync`, `--no-sync` | Control whether to sync filesystems first on Linux. |
+| `-j N`, `--jobs=N`, `--threads=N` | Limit workers used for large mount selections. |
+
+With no size override, `df` uses 1024-byte blocks or 512-byte blocks when
+`POSIXLY_CORRECT` is set. POSIX layout uses these defaults unless a size
+option is provided. gutil reports an unavailable inode value as `-`
+in the table. Filesystem visibility comes from the current mount
+namespace on Linux and the system disk inventory on macOS and Windows.
+
+### duf output and filters
+
+`gutil duf [OPTIONS] [PATH]...` lists filesystems once by default.
+Use `--all` to include duplicate and special mounts, `--inodes` for inode
+usage, or `--json` for machine-readable results. JSON includes byte totals,
+usage, inode counts, and mount details. Unavailable numeric fields are
+zero in JSON. The single-dash spellings used by upstream duf, such as
+`-json`, are also accepted.
+
+| Option | Behavior |
+| --- | --- |
+| `--only GROUPS`, `--hide GROUPS` | Include or exclude device groups from `local,network,fuse,special,loops,binds`. |
+| `--only-fs TYPES`, `--hide-fs TYPES` | Include or exclude comma-separated filesystem types. |
+| `--only-mp GLOBS`, `--hide-mp GLOBS` | Include or exclude mount points by comma-separated globs. |
+| `--output COLUMNS` | Select table fields from `mountpoint,size,used,avail,usage,inodes,inodes_used,inodes_avail,inodes_usage,type,filesystem`. |
+| `--sort COLUMN` | Sort by a table field. Text sorts ascending, and numeric values sort descending. |
+| `--style unicode`, `--style ascii` | Select table border characters. |
+| `--width WIDTH` | Set the maximum width in display columns. |
+| `--warnings` | Report mount measurement errors. |
+
+```sh
+gutil df -hT /tmp
+gutil df --output=source,size,target --total .
+gutil duf --only local --sort size
+gutil duf --json .
+```

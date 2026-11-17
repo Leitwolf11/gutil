@@ -255,3 +255,50 @@ pub(super) fn sync() {
     #[cfg(target_os = "linux")]
     rustix::fs::sync();
 }
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::{parse_mount, Kind};
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn parses_linux_mount_fields_and_escaped_names() {
+        let mount = parse_mount(
+            b"42 24 8:1 /root /with\\040space\\011tab\\134slash rw shared:1 - ext4 /dev/disk rw",
+        )
+        .unwrap();
+        assert_eq!(mount.path.as_os_str(), "/with space\ttab\\slash");
+        assert_eq!(mount.identity.as_deref(), Some(std::ffi::OsStr::new("8:1")));
+        assert_eq!(mount.device, "/dev/disk");
+        assert_eq!(mount.options, "rw");
+        assert_eq!(mount.kind, Kind::Binds);
+        let literal = parse_mount(b"4 2 0:4 / /literal\\xyz rw - tmpfs tmpfs rw").unwrap();
+        assert_eq!(literal.path.as_os_str(), "/literal\\xyz");
+        assert!(parse_mount(b"missing separator").is_none());
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn classifies_network_fuse_and_loop_devices() {
+        for (line, kind) in [
+            (
+                &b"42 24 0:4 / /data rw - nfs4 host:/data rw"[..],
+                Kind::Network,
+            ),
+            (
+                &b"42 24 0:4 / /data rw - fuse.rclone remote rw"[..],
+                Kind::Fuse,
+            ),
+            (
+                &b"42 24 0:4 / /data ro - squashfs /dev/loop0 ro"[..],
+                Kind::Loops,
+            ),
+            (
+                &b"42 24 0:4 /vol /data rw - btrfs /dev/disk rw"[..],
+                Kind::Local,
+            ),
+        ] {
+            assert_eq!(parse_mount(line).unwrap().kind, kind);
+        }
+    }
+}

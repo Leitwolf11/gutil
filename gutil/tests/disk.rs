@@ -188,3 +188,125 @@ fn shows_help_and_version_for_each_disk_command() {
         );
     }
 }
+
+#[test]
+fn observes_df_block_size_labels_and_portable_defaults() {
+    let location = tempfile::tempdir().unwrap();
+    let path = location.path().to_str().unwrap();
+    for (flag, heading, suffix) in [
+        ("-BM", "1M-blocks", "M"),
+        ("-B2MB", "2MB-blocks", ""),
+        ("-BKiB", "1K-blocks", "KiB"),
+        ("-B1", "1B-blocks", ""),
+    ] {
+        let output = success(run("df", &["--output=size", flag, "--", path]));
+        let mut lines = output.lines().map(str::trim);
+        assert_eq!(lines.next(), Some(heading));
+        let size = lines.next().unwrap().strip_suffix(suffix).unwrap();
+        assert!(size.parse::<u64>().unwrap() > 0);
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_gutil"))
+        .args(["--no-config", "df", "-P", path])
+        .env("LC_ALL", "C")
+        .env("POSIXLY_CORRECT", "1")
+        .env("DF_BLOCK_SIZE", "1")
+        .output()
+        .unwrap();
+    assert!(success(output)
+        .lines()
+        .next()
+        .unwrap()
+        .contains("512-blocks"));
+    let output = Command::new(env!("CARGO_BIN_EXE_gutil"))
+        .args(["--no-config", "df", "--output=size", path])
+        .env("LC_ALL", "C")
+        .env("DF_BLOCK_SIZE", "MB")
+        .output()
+        .unwrap();
+    let table = success(output);
+    assert_eq!(table.lines().next().unwrap().trim(), "1MB-blocks");
+    assert!(table.lines().nth(1).unwrap().ends_with("MB"));
+}
+
+#[test]
+fn compares_consistent_mount_fields_across_worker_counts() {
+    let read = |workers: &str| {
+        let json = success(run("duf", &["--all", "--json", workers, "--sort=size"]));
+        let rows: Vec<Value> = serde_json::from_str(&json).unwrap();
+        assert_ne!(rows, Vec::<Value>::new());
+        rows.into_iter()
+            .map(|row| {
+                (
+                    row["mount_point"].as_str().unwrap().to_owned(),
+                    row["total"].as_u64().unwrap(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(read("--threads=1"), read("--jobs=4"));
+    let ordinary = success(run(
+        "df",
+        &["--all", "--output=source,fstype,used,avail,pcent,target"],
+    ));
+    assert!(ordinary.contains("Mounted on") && ordinary.contains("Avail"));
+    let mounted = success(run(
+        "duf",
+        &["--json", "--only=local,network,fuse,special,loops,binds"],
+    ));
+    assert_ne!(
+        serde_json::from_str::<Vec<Value>>(&mounted).unwrap(),
+        Vec::<Value>::new()
+    );
+    let excluded = success(run(
+        "duf",
+        &["--json", "--hide=local,network,fuse,special,loops,binds"],
+    ));
+    assert_eq!(excluded.trim(), "[]");
+    let excluded = success(run("duf", &["--json", "--hide-mp=*"]));
+    assert_eq!(excluded.trim(), "[]");
+}
+
+#[test]
+fn supports_short_filter_flags_and_duf_inode_sort_options() {
+    let location = tempfile::tempdir().unwrap();
+    let path = location.path().to_str().unwrap();
+    let json = success(run("duf", &["--json", path]));
+    let entries: Vec<Value> = serde_json::from_str(&json).unwrap();
+    let kind = entries[0]["fs_type"].as_str().unwrap();
+    let output = success(run("df", &["-ahj1", "-t", kind, path]));
+    assert!(output.contains("Size"));
+    let output = success(run("df", &["-Hl", "-x", "unavailable", path]));
+    assert!(output.contains("Size"));
+    let rejected = run("df", &["--exclude-type", kind, path]);
+    assert_eq!(rejected.status.code(), Some(1));
+    let output = success(run(
+        "df",
+        &["--sync", "--no-sync", "--block-size=human-readable", path],
+    ));
+    assert!(output.contains("Size"));
+    let output = success(run("df", &["--block-size=si", path]));
+    assert!(output.contains("Size"));
+    let output = success(run(
+        "duf",
+        &[
+            "--all",
+            "--inodes",
+            "--style=unicode",
+            "--sort=inodes_usage",
+            "--output=mountpoint,inodes,inodes_used,inodes_avail,inodes_usage",
+            path,
+        ],
+    ));
+    assert!(output.contains("Inodes"));
+    let output = Command::new(env!("CARGO_BIN_EXE_gutil"))
+        .args([
+            "--no-config",
+            "--color=always",
+            "duf",
+            "--output=size",
+            path,
+        ])
+        .output()
+        .unwrap();
+    assert!(success(output).contains("\x1b["));
+}

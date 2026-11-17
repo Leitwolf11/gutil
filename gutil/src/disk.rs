@@ -144,7 +144,10 @@ pub(crate) fn run(
         if options.total {
             rows.push(Row::total(&rows));
         }
-        render::df(&rows, &options.layout, options.size, &mut output)?;
+        let size = options
+            .size
+            .unwrap_or_else(|| options::default_size(options.layout.portable));
+        render::df(&rows, &options.layout, size, &mut output)?;
     } else {
         render::duf(&mut rows, &options.layout, color, &mut output)?;
     }
@@ -214,6 +217,20 @@ fn collect(
     unique.sort_unstable();
     unique.dedup();
     let usages = measure(&mounts, unique, options.workers)?;
+    let (rows, stats_failed) = rows(command, options, &mounts, selected, &usages, ui, errors)?;
+    Ok((rows, failure || stats_failed))
+}
+
+fn rows(
+    command: Command,
+    options: &Options,
+    mounts: &[Mount],
+    selected: Vec<(usize, &OsStr)>,
+    usages: &[Option<io::Result<Usage>>],
+    ui: Presentation,
+    errors: &mut impl Write,
+) -> io::Result<(Vec<Row>, bool)> {
+    let mut failure = false;
     let filter_zero = options.paths.is_empty() && !options.include_all;
     let mut rows = Vec::with_capacity(selected.len());
     for (index, file) in selected {
@@ -297,4 +314,58 @@ fn measure(
         }
     }
     Ok(usage)
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::{find_mount, options, rows, Command, Kind, Mount, Presentation};
+    use crate::config::Settings;
+    use crate::jobs::Count;
+    use std::ffi::{OsStr, OsString};
+    use std::io;
+    use std::path::Path;
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn handles_inaccessible_filesystems_as_failed_operands_or_placeholder_rows() {
+        let broken = Mount {
+            path: "/test/mount".into(),
+            device: "example".into(),
+            kind: Kind::Network,
+            filesystem: "nfs".into(),
+            options: "ro".into(),
+            identity: None,
+        };
+        let usage = [Some(Err(io::Error::from(io::ErrorKind::PermissionDenied)))];
+        let mounts = [broken];
+        for (arguments, label, failed, count) in [
+            (&["--warnings", "--all", "file"][..], "gutil duf", false, 1),
+            (&["--warnings", "file"], "gutil duf", true, 0),
+            (&["file"], "gutil duf", true, 0),
+        ] {
+            let args = arguments.iter().map(OsString::from);
+            let options::Request::List(options) =
+                options::parse(Command::Duf, args, Count::DEFAULT_AUTO_LIMIT).unwrap()
+            else {
+                panic!("expected listing");
+            };
+            let mut errors = Vec::new();
+            let (records, failure) = rows(
+                Command::Duf,
+                &options,
+                &mounts,
+                vec![(0, OsStr::new("file"))],
+                &usage,
+                Presentation::new(&Settings::default()),
+                &mut errors,
+            )
+            .unwrap();
+            assert_eq!((failure, records.len()), (failed, count));
+            assert!(String::from_utf8(errors).unwrap().contains(label));
+            if let Some(row) = records.first() {
+                assert!(row.usage.is_none());
+            }
+        }
+        assert!(find_mount(&mounts, Path::new(".")).is_err());
+    }
 }

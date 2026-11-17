@@ -32,6 +32,7 @@ Compare timings from the same run. Long-format results include metadata formatti
 - [2026-11-17 · Linux x86-64 · file names and symbolic links](bench-results/2026-11-17-linux-x86-64-paths.md)
 - [2026-11-17 · Linux x86-64 · shell and system utilities](bench-results/2026-11-17-linux-x86-64-shell.md)
 - [2026-11-17 · Linux x86-64 · file search](bench-results/2026-11-17-linux-x86-64-fd.md)
+- [2026-11-17 · Linux x86-64 · mounted filesystems](bench-results/2026-11-17-linux-x86-64-disk.md)
 
 ## Checksum throughput
 
@@ -104,3 +105,16 @@ TMPDIR=/tmp REFERENCE_FD=/usr/bin/fd cargo bench --locked -p gutil --bench fd --
 Both implementations search the same tree and apply the same regular
 expression, extension, file type, and ignore rules. The harness verifies
 the matched path set before timing.
+
+## Mounted filesystem reporting
+
+Set `GNU_COREUTILS_DIR` to a directory containing GNU `df` and
+`REFERENCE_DUF` to an upstream duf executable.
+
+```sh
+TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin REFERENCE_DUF=/usr/bin/duf cargo bench --locked -p gutil --bench disk -- --noplot
+```
+
+The harness compares one file operand and 512 repeated operands with
+GNU `df`. A separate workload measures the full mount inventory as JSON.
+It compares the stable capacity fields on mounts both implementations report.
