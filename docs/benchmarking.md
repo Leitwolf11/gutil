@@ -27,6 +27,7 @@ Compare timings from the same run. Long-format results include metadata formatti
 ## Recorded results
 
 - [2026-11-09 · Linux x86-64 · ls](bench-results/2026-11-09-linux-x86-64-ls.md)
+- [2026-11-17 · Linux x86-64 · checksums](bench-results/2026-11-17-linux-x86-64-checksum.md)
 
 ## Checksum throughput
 
