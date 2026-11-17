@@ -4,6 +4,8 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
+use rustc_hash::FxHashSet;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Existence {
     Existing,
@@ -41,7 +43,7 @@ pub(super) fn resolve(path: &Path, cwd: &Path, mode: Mode) -> io::Result<PathBuf
 
     // The platform canonicalizer does the physical walk without allocating a
     // queue. A failed lookup still needs our configurable missing-path rules.
-    if mode.order == Order::Physical && !mode.strip {
+    if mode.order == Order::Physical && !mode.strip && directory_marker(path).is_none() {
         if let Ok(canonical) = fs::canonicalize(path) {
             return Ok(native_path(canonical));
         }
@@ -58,6 +60,19 @@ pub(super) fn resolve(path: &Path, cwd: &Path, mode: Mode) -> io::Result<PathBuf
             let (root, parts) = split(&normalized);
             walk(root, parts, mode.existence, Expansion::Physical)
         }
+    }
+}
+
+pub(super) fn current_directory() -> io::Result<PathBuf> {
+    #[cfg(windows)]
+    {
+        // Windows may expose an abbreviated directory in the process cwd.
+        // Use the same spelling as canonicalized operands and base directories.
+        fs::canonicalize(".").map(native_path)
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::current_dir()
     }
 }
 
@@ -96,9 +111,32 @@ fn native_path(path: PathBuf) -> PathBuf {
 enum Part {
     Parent,
     Name(OsString),
+    EndLink(PathBuf),
     // A trailing slash or explicit dot makes the preceding component a
     // directory. A plain slash allows a missing leaf in the default mode.
-    Directory { allow_missing_leaf: bool },
+    Directory(DirectoryMarker),
+}
+
+#[derive(Clone, Copy)]
+enum DirectoryMarker {
+    Slash,
+    Dot,
+}
+
+fn directory_marker(path: &Path) -> Option<DirectoryMarker> {
+    let bytes = path.as_os_str().as_encoded_bytes();
+    let separator = |byte| byte == b'/' || (cfg!(windows) && byte == b'\\');
+    let trimmed = bytes
+        .iter()
+        .rposition(|&byte| !separator(byte))
+        .map_or(&bytes[..0], |index| &bytes[..=index]);
+    if matches!(trimmed, [.., sep, b'.'] if separator(*sep)) {
+        Some(DirectoryMarker::Dot)
+    } else if bytes.len() != trimmed.len() {
+        Some(DirectoryMarker::Slash)
+    } else {
+        None
+    }
 }
 
 fn split(path: &Path) -> (PathBuf, VecDeque<Part>) {
@@ -112,23 +150,8 @@ fn split(path: &Path) -> (PathBuf, VecDeque<Part>) {
             Component::Normal(name) => parts.push_back(Part::Name(name.to_os_string())),
         }
     }
-    let bytes = path.as_os_str().as_encoded_bytes();
-    let is_separator = |byte: u8| byte == b'/' || (cfg!(windows) && byte == b'\\');
-    let end = bytes
-        .iter()
-        .rposition(|byte| !is_separator(*byte))
-        .map_or(0, |i| i + 1);
-    let trimmed = &bytes[..end];
-    if matches!(trimmed, [.., separator, b'.'] if is_separator(*separator)) {
-        parts.push_back(Part::Directory {
-            allow_missing_leaf: false,
-        });
-        return (root, parts);
-    }
-    if bytes.len() != trimmed.len() {
-        parts.push_back(Part::Directory {
-            allow_missing_leaf: true,
-        });
+    if let Some(marker) = directory_marker(path) {
+        parts.push_back(Part::Directory(marker));
     }
     (root, parts)
 }
@@ -146,14 +169,17 @@ fn walk(
     existence: Existence,
     expansion: Expansion,
 ) -> io::Result<PathBuf> {
-    let mut followed = 0;
+    let mut active_links = FxHashSet::default();
     let expand = expansion == Expansion::Physical;
     while let Some(part) = parts.pop_front() {
         match part {
             Part::Parent => {
                 result.pop();
             }
-            Part::Directory { .. } => {}
+            Part::Directory(_) => {}
+            Part::EndLink(link) => {
+                active_links.remove(&link);
+            }
             Part::Name(name) => {
                 result.push(name);
                 if !expand && existence == Existence::AnyMayBeMissing {
@@ -170,22 +196,21 @@ fn walk(
                     Err(error) => return Err(error),
                 };
                 if expand && metadata.file_type().is_symlink() {
-                    followed += 1;
-                    if followed > 40 {
+                    if !active_links.insert(result.clone()) {
                         if existence == Existence::AnyMayBeMissing {
                             continue;
                         }
-                        return Err(io::Error::other("too many symbolic link expansions"));
+                        return Err(io::Error::other("symbolic link cycle"));
                     }
-                    let target = fs::read_link(&result)?;
-                    let (root, mut target) = split(&target);
+                    let (root, mut target) = split(&fs::read_link(&result)?);
+                    target.push_back(Part::EndLink(result.clone()));
                     result.pop();
                     if !root.as_os_str().is_empty() {
                         result.push(native_path(root));
                     }
                     target.append(&mut parts);
                     parts = target;
-                } else if !parts.is_empty()
+                } else if parts.iter().any(|part| !matches!(part, Part::EndLink(_)))
                     && !metadata.is_dir()
                     && existence != Existence::AnyMayBeMissing
                 {
@@ -214,9 +239,7 @@ fn allow_failure(
                 && remaining.iter().all(|part| {
                     matches!(
                         part,
-                        Part::Directory {
-                            allow_missing_leaf: true
-                        }
+                        Part::Directory(DirectoryMarker::Slash) | Part::EndLink(_)
                     ) || (expansion == Expansion::Strip && matches!(part, Part::Name(_)))
                 })
         }

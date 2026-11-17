@@ -146,7 +146,16 @@ fn canonicalizes_missing_paths_and_formats_relative_names() {
     assert_eq!(failure.status.code(), Some(1));
     assert_eq!(failure.stdout, b"file\n");
     assert_eq!(failure.stderr, b"");
-    let failure = run(directory, &["realpath", "one/file/", "one/missing/."]);
+    let failure = run(
+        directory,
+        &[
+            "realpath",
+            "one/file/",
+            "one/file/./",
+            "one/missing/.",
+            "one/missing/./",
+        ],
+    );
     assert_eq!(failure.status.code(), Some(1));
     assert_eq!(failure.stdout, b"");
     verify(
@@ -246,4 +255,175 @@ fn keeps_worker_results_in_operand_order_and_prints_command_help() {
             format!("gutil {name} {}\n", env!("CARGO_PKG_VERSION")).as_bytes(),
         );
     }
+}
+
+#[test]
+fn checks_long_path_options_and_basename_option_order() {
+    let fixture = tempfile::tempdir().unwrap();
+    let directory = fixture.path();
+    verify(
+        run(directory, &["basename", "-aj2", "--zero", "dir/a", "dir/b"]),
+        b"a\0b\0",
+    );
+    verify(
+        run(directory, &["basename", "--suffix=.txt", "dir/a.txt"]),
+        b"a\n",
+    );
+    verify(
+        run(directory, &["basename", "-s", ".txt", "dir/a.txt"]),
+        b"a\n",
+    );
+    verify(
+        run(directory, &["basename", "-a", "dir/a", "-z", "dir/b"]),
+        b"a\n-z\nb\n",
+    );
+    verify(run(directory, &["dirname", "--zero", "dir/b"]), b"dir\0");
+    assert_eq!(
+        run(directory, &["dirname", "-x", "dir/b"]).status.code(),
+        Some(1)
+    );
+    verify(
+        run(
+            directory,
+            &[
+                "realpath",
+                "-qPj2",
+                "-E",
+                "--logical",
+                "--physical",
+                "--quiet",
+                "--relative-to",
+                ".",
+                "--zero",
+                "a",
+            ],
+        ),
+        b"a\0",
+    );
+    verify(
+        run(
+            directory,
+            &[
+                "realpath",
+                "--no-symlinks",
+                "--canonicalize",
+                "--canonicalize-missing",
+                "--relative-to=.",
+                "a",
+            ],
+        ),
+        b"a\n",
+    );
+    for args in [
+        &["realpath", "--canonicalize-existing", "missing"][..],
+        &["realpath", "--relative-to=", "."],
+        &["realpath", "--relative-base=", "."],
+        &["realpath", "-x", "."],
+        &["realpath", "--unknown", "."],
+        &["realpath", "--", ""],
+        &["readlink", "--physical", "."],
+    ] {
+        assert_eq!(run(directory, args).status.code(), Some(1), "{args:?}");
+    }
+}
+
+#[test]
+fn keeps_paths_absolute_when_the_relative_start_is_outside_the_base() {
+    let fixture = tempfile::tempdir().unwrap();
+    let directory = fixture.path();
+    fs::create_dir_all(directory.join("inside/child")).unwrap();
+    fs::create_dir(directory.join("outside")).unwrap();
+    let expected = run(directory, &["realpath", "inside/file"]);
+    assert!(expected.status.success());
+    verify(
+        run(
+            directory,
+            &[
+                "realpath",
+                "--relative-base=inside",
+                "--relative-to=outside",
+                "inside/file",
+            ],
+        ),
+        &expected.stdout,
+    );
+    let separator = std::path::MAIN_SEPARATOR_STR;
+    verify(
+        run(
+            directory,
+            &[
+                "realpath",
+                "--relative-base=inside",
+                "--relative-to=inside/child",
+                "inside/file",
+            ],
+        ),
+        format!("..{separator}file\n").as_bytes(),
+    );
+    verify(
+        run(
+            directory,
+            &["realpath", "--relative-base=outside", "inside/file"],
+        ),
+        &expected.stdout,
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn resolves_long_link_chains_and_distinguishes_cycles_from_repeated_operands() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = tempfile::tempdir().unwrap();
+    let directory = fixture.path();
+    fs::create_dir(directory.join("target")).unwrap();
+    fs::write(directory.join("target/file"), []).unwrap();
+    for index in 0..48 {
+        let link = directory.join(format!("chain-{index:02}"));
+        let next = if index == 47 {
+            fs::canonicalize(directory).unwrap().join("target/file")
+        } else {
+            format!("chain-{:02}", index + 1).into()
+        };
+        symlink(next, link).unwrap();
+    }
+    for mode in [
+        "--canonicalize",
+        "--canonicalize-existing",
+        "--canonicalize-missing",
+    ] {
+        verify(
+            run(
+                directory,
+                &["realpath", mode, "--relative-to=.", "chain-00"],
+            ),
+            b"target/file\n",
+        );
+    }
+    symlink("./target", directory.join("alias")).unwrap();
+    verify(
+        run(
+            directory,
+            &["realpath", "--relative-to=.", "alias/../alias/file"],
+        ),
+        b"target/file\n",
+    );
+    symlink("cycle", directory.join("cycle")).unwrap();
+    verify(
+        run(directory, &["realpath", "-m", "--relative-to=.", "cycle"]),
+        b"cycle\n",
+    );
+    assert_eq!(
+        run(directory, &["realpath", "-e", "cycle"]).status.code(),
+        Some(1)
+    );
+
+    let targets = run(
+        directory,
+        &["readlink", "--no-newline", "--zero", "alias", "cycle"],
+    );
+    verify(targets, b"./target\0cycle\0");
+    let invalid = run(directory, &["readlink", "--verbose", "--silent", "target"]);
+    assert_eq!(invalid.status.code(), Some(1));
+    assert_eq!(invalid.stderr, b"");
 }
