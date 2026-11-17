@@ -60,3 +60,7 @@ harness = false
 [[bench]]
 name = "paths"
 harness = false
+
+[[bench]]
+name = "fd"
+harness = false
