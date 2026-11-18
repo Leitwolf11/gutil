@@ -15,7 +15,11 @@ const FILES: [&str; 4] = ["input-1", "input-2", "input-3", "input-4"];
 fn checksums(criterion: &mut Criterion) {
     let fixture = tempfile::tempdir().expect("create checksum fixture");
     let root = fixture.path();
-    let gutil = Path::new(env!("CARGO_BIN_EXE_gutil"));
+    let binary = env::var_os("GUTIL_BENCH_BIN")
+        .map_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_gutil")), PathBuf::from)
+        .canonicalize()
+        .expect("resolve the checksum benchmark executable");
+    let gutil = binary.as_path();
     let gnu = env::var_os("GNU_COREUTILS_DIR").map(PathBuf::from);
     let mut block = vec![0u8; 64 * 1024];
     let file_bytes = if cfg!(debug_assertions) {
