@@ -9,7 +9,11 @@ use std::time::Duration;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 
 fn shell(criterion: &mut Criterion) {
-    let gutil = Path::new(env!("CARGO_BIN_EXE_gutil"));
+    let binary = env::var_os("GUTIL_BENCH_BIN")
+        .map_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_gutil")), PathBuf::from)
+        .canonicalize()
+        .expect("resolve the shell benchmark executable");
+    let gutil = binary.as_path();
     let gnu = env::var_os("GNU_COREUTILS_DIR").map(PathBuf::from);
 
     for (name, arguments, status) in [
@@ -32,6 +36,14 @@ fn shell(criterion: &mut Criterion) {
         group.bench_function("gutil", |benchmark| {
             benchmark.iter(|| run(&mut actual, status));
         });
+        if name == "true" {
+            let mut fixed = process(gutil);
+            fixed.args(["--no-config", "--progress=never", "--jobs=1", "true"]);
+            assert_eq!(result, output(&mut fixed, status));
+            group.bench_function("gutil-j1", |benchmark| {
+                benchmark.iter(|| run(&mut fixed, status));
+            });
+        }
         if let Some(dir) = &gnu {
             let mut reference = process(&dir.join(name));
             reference.args(arguments);

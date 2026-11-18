@@ -36,6 +36,7 @@ Compare timings from the same run. Long-format results include metadata formatti
 - [2026-11-18 · Linux x86-64 · base encodings](bench-results/2026-11-18-linux-x86-64-encoding.md)
 - [2026-11-18 · Linux x86-64 · filesystem mutations](bench-results/2026-11-18-linux-x86-64-mutate.md)
 - [2026-11-18 · Linux x86-64 · checksum backend comparison](bench-results/2026-11-18-linux-x86-64-checksum-backend.md)
+- [2026-11-18 · Linux x86-64 · lazy worker discovery](bench-results/2026-11-18-linux-x86-64-startup.md)
 
 ## Checksum throughput
 
@@ -104,6 +105,11 @@ TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin cargo bench --locked -p gutil --bench she
 The harness checks output and exit status for finite commands and the first
 8,192 output bytes from `yes`. Timed pipe runs drain 16 MiB before closing
 the reader. The report records the exact operands and environment.
+
+`GUTIL_BENCH_BIN` selects a saved release executable for the shell harness.
+The `true` group includes an explicit `--jobs=1` control alongside automatic
+worker selection. Compare saved revisions using Criterion's
+`--save-baseline NAME` and `--baseline NAME` options.
 
 ## File search
 

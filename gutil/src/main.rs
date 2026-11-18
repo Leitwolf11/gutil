@@ -17,6 +17,7 @@ mod pwd;
 mod shell;
 mod wc;
 
+use std::cell::LazyCell;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
@@ -153,20 +154,20 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
     if let Some(mode) = options.hyperlinks {
         settings.output.hyperlinks = mode;
     }
-    let job_count = options.jobs.unwrap_or_else(|| settings.global.job_count());
+    let job_count = LazyCell::new(|| options.jobs.unwrap_or_else(|| settings.global.job_count()));
     let ui = Presentation::new(settings);
     if settings.diagnostics.verbosity == config::Verbosity::Verbose {
         report_settings(
             loaded.path.as_ref(),
             options.profile.as_deref(),
-            job_count,
+            *job_count,
             ui,
         )?;
     }
 
     match command {
         Command::Cat => {
-            return match cat::run(args, job_count, settings.cat, ui) {
+            return match cat::run(args, *job_count, settings.cat, ui) {
                 Err(error) => {
                     ui.error(&mut io::stderr(), "gutil cat", &error.to_string())?;
                     Ok(1)
@@ -175,17 +176,17 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
             }
         }
         Command::Plugin => return plugin::run(args, ui),
-        Command::Mutate(command) => return mutate::run(command, args, job_count, ui),
-        Command::Path(command) => return paths::run(command, args, job_count, ui),
-        Command::Checksum(algorithm) => return checksum::run(algorithm, args, job_count, ui),
-        Command::Edge(edge) => return edges::run(edge, args, job_count, ui),
-        Command::Encoding(base) => return encoding::run(base, args, job_count, ui),
-        Command::Wc => return wc::run(args, job_count, ui),
+        Command::Mutate(command) => return mutate::run(command, args, *job_count, ui),
+        Command::Path(command) => return paths::run(command, args, *job_count, ui),
+        Command::Checksum(algorithm) => return checksum::run(algorithm, args, *job_count, ui),
+        Command::Edge(edge) => return edges::run(edge, args, *job_count, ui),
+        Command::Encoding(base) => return encoding::run(base, args, *job_count, ui),
+        Command::Wc => return wc::run(args, *job_count, ui),
         Command::Shell(command) => return shell::run(command, args, ui),
         Command::Disk(command) => {
-            return disk::run(command, args, job_count, settings.output.color, ui)
+            return disk::run(command, args, *job_count, settings.output.color, ui)
         }
-        Command::Fd => return fd::run(args, job_count, ui),
+        Command::Fd => return fd::run(args, *job_count, ui),
         _ => {}
     }
 
@@ -196,13 +197,13 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         Command::Cache => cache::run(args, offline, &loaded, ui, &mut output, &mut errors),
         Command::Ls => ls::run(
             args,
-            job_count,
+            *job_count,
             settings,
             stdout.is_terminal(),
             &mut output,
             &mut errors,
         ),
-        Command::Pwd => pwd::run(args, job_count, settings.pwd, ui, &mut output, &mut errors),
+        Command::Pwd => pwd::run(args, *job_count, settings.pwd, ui, &mut output, &mut errors),
         _ => ui
             .error(
                 &mut errors,
