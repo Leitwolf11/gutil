@@ -33,6 +33,7 @@ Compare timings from the same run. Long-format results include metadata formatti
 - [2026-11-17 · Linux x86-64 · shell and system utilities](bench-results/2026-11-17-linux-x86-64-shell.md)
 - [2026-11-17 · Linux x86-64 · file search](bench-results/2026-11-17-linux-x86-64-fd.md)
 - [2026-11-17 · Linux x86-64 · mounted filesystems](bench-results/2026-11-17-linux-x86-64-disk.md)
+- [2026-11-18 · Linux x86-64 · base encodings](bench-results/2026-11-18-linux-x86-64-encoding.md)
 
 ## Checksum throughput
 
@@ -118,3 +119,25 @@ TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin REFERENCE_DUF=/usr/bin/duf cargo bench --
 The harness compares one file operand and 512 repeated operands with
 GNU `df`. A separate workload measures the full mount inventory as JSON.
 It compares the stable capacity fields on mounts both implementations report.
+
+## Base encoding
+
+Set `GNU_COREUTILS_DIR` to a directory containing GNU `base32` and `base64`.
+
+```sh
+TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin cargo bench --locked -p gutil --bench encoding -- --noplot
+```
+
+The harness compares wrapped encoding, unwrapped encoding, and wrapped
+decoding over an 8 MiB binary fixture. It checks output against GNU before
+timing each pair and includes process startup in the measured time.
+
+Run the generated encoding parity suite with GNU Coreutils 9.12 binaries.
+The test uses a deterministic proptest generator and compares stdout and
+exit status for 294 encoding and decoding cases, including malformed data.
+It requires an explicit opt-in because the GNU version is part of the
+compatibility baseline.
+
+```sh
+GNU_COREUTILS_DIR=/usr/bin cargo test --locked -p gutil --test encoding generated_cases_match_gnu_encoding_and_decoding -- --ignored
+```
