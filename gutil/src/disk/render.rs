@@ -411,6 +411,53 @@ mod tests {
     use crate::disk::Kind;
 
     #[test]
+    fn formats_small_sizes_and_sanitizes_control_characters() {
+        for (bytes, size, expected) in [
+            (511, Size::Binary, "511"),
+            (1024, Size::Binary, "1.0K"),
+            (1537, Size::Binary, "1.6K"),
+            (1500, Size::Si, "1.5K"),
+            (-1500, Size::Si, "-1.5K"),
+        ] {
+            assert_eq!(super::format_size(bytes, size), expected);
+        }
+        assert_eq!(
+            super::native_cell(std::ffi::OsStr::new("line\nwith\ttab\r")),
+            b"line?with?tab?".as_slice()
+        );
+    }
+
+    #[test]
+    fn renders_unavailable_usage_and_preserves_device_groups_in_json() {
+        for kind in [
+            Kind::Local,
+            Kind::Network,
+            Kind::Fuse,
+            Kind::Special,
+            Kind::Loops,
+            Kind::Binds,
+        ] {
+            let row = Row {
+                device: "unavailable".into(),
+                target: "/test".into(),
+                filesystem: "unknown".into(),
+                file: "-".into(),
+                kind,
+                options: "ro".into(),
+                usage: None,
+            };
+            assert_eq!(Column::Available.cell(&row, Size::Binary), "-");
+            assert_eq!(Column::Source.amount(Usage::default()), 0);
+            let json = serde_json::to_value(super::JsonRow::from(&row));
+            assert_eq!(
+                json.ok()
+                    .and_then(|value| value["device_type"].as_str().map(str::to_owned)),
+                Some(kind.name().into())
+            );
+        }
+    }
+
+    #[test]
     fn preserves_negative_availability_in_the_value_and_percentage() {
         let row = Row {
             device: "full".into(),
