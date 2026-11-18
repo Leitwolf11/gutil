@@ -168,8 +168,13 @@ impl Options {
                     source
                 }))
             }
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error),
+            Err(error) if collision(&error, destination) => {}
+            Err(error) => {
+                return Err(io::Error::new(
+                    error.kind(),
+                    format!("cannot create link: {error}"),
+                ))
+            }
         }
         if fs::symlink_metadata(destination)?.is_dir() {
             return Err(io::Error::new(
@@ -229,6 +234,17 @@ impl Options {
             source
         }))
     }
+}
+
+#[cfg(windows)]
+fn collision(error: &io::Error, destination: &Path) -> bool {
+    error.kind() == io::ErrorKind::AlreadyExists
+        || error.raw_os_error() == Some(5) && fs::symlink_metadata(destination).is_ok()
+}
+
+#[cfg(not(windows))]
+fn collision(error: &io::Error, _destination: &Path) -> bool {
+    error.kind() == io::ErrorKind::AlreadyExists
 }
 
 fn parent(path: &Path) -> &Path {
@@ -348,6 +364,19 @@ fn symbolic_typed(_source: &Path, _target: &Path, _final_target: &Path) -> io::R
 
 #[cfg(all(test, windows))]
 mod tests {
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn recognizes_windows_existing_name_denials_without_masking_privilege_errors() {
+        let fixture = tempfile::tempdir().unwrap();
+        let existing = fixture.path().join("existing");
+        std::fs::write(&existing, b"data").unwrap();
+        let denied = std::io::Error::from_raw_os_error(5);
+        assert!(super::collision(&denied, &existing));
+        assert!(!super::collision(&denied, &fixture.path().join("missing")));
+        let privilege = super::windows_link_error(std::io::Error::from_raw_os_error(1314));
+        assert!(!super::collision(&privilege, &existing));
+    }
+
     #[test]
     fn explains_developer_mode_when_windows_denies_symbolic_link_creation() {
         let error = super::windows_link_error(std::io::Error::from_raw_os_error(1314));
