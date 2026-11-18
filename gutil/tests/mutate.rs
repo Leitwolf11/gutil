@@ -213,7 +213,7 @@ fn backs_up_destinations_and_honors_interactive_answers() {
     }
     std::fs::write(root.join("independent"), b"keep").unwrap();
     for (answer, expected) in [("n\n", b"keep".as_slice()), ("y\n", b"new".as_slice())] {
-        let mut child = command(root, "ln", &["-i", "source", "independent"])
+        let mut child = command(root, "ln", &["--interactive", "source", "independent"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -351,4 +351,170 @@ fn creates_windows_symbolic_links_or_explains_developer_mode() {
         assert!(String::from_utf8_lossy(&output.stderr).contains("Windows Developer Mode"));
         assert!(!root.join("symbolic").exists());
     }
+}
+
+#[test]
+fn long_options_validate_link_plans_and_protect_backups() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    for (name, bytes) in [
+        ("source", b"new".as_slice()),
+        ("target", b"old"),
+        ("target~", b"backup-source"),
+    ] {
+        std::fs::write(root.join(name), bytes).unwrap();
+    }
+    std::fs::create_dir(root.join("directory")).unwrap();
+    success(&run(
+        root,
+        "ln",
+        &[
+            "--force",
+            "--directory",
+            "--verbose",
+            "--target-directory=directory",
+            "source",
+        ],
+    ));
+    assert_eq!(
+        std::fs::read(root.join("directory/source")).unwrap(),
+        b"new"
+    );
+    for args in [
+        &["--relative", "source", "new"][..],
+        &["-t", "directory", "-T", "source"],
+        &["--target-directory=missing", "source"],
+        &["-T", "source"],
+        &["source", "target", "missing"],
+        &["source", "target"],
+        &["source"],
+        &["--backup=invalid", "source", "target"],
+        &["--backup=off", "source", "target"],
+        &["--backup=simple", "--suffix=", "source", "target"],
+        &["-b", "target~", "target"],
+    ] {
+        assert_eq!(run(root, "ln", args).status.code(), Some(1), "{args:?}");
+    }
+    assert_eq!(std::fs::read(root.join("target")).unwrap(), b"old");
+    success(&run(
+        root,
+        "ln",
+        &["--backup=simple", "--suffix=.save", "source", "target"],
+    ));
+    assert_eq!(std::fs::read(root.join("target.save")).unwrap(), b"old");
+    std::fs::write(root.join("target.~junk~"), b"ignored").unwrap();
+    std::fs::write(root.join("target.~7~"), b"seven").unwrap();
+    success(&run(root, "ln", &["--backup=existing", "source", "target"]));
+    assert_eq!(std::fs::read(root.join("target.~8~")).unwrap(), b"new");
+    std::fs::write(root.join("target.~18446744073709551615~"), b"max").unwrap();
+    assert_eq!(
+        run(root, "ln", &["--backup=numbered", "source", "target"])
+            .status
+            .code(),
+        Some(1)
+    );
+    let output = command(root, "ln", &["--backup", "source", "directory/source"])
+        .env("VERSION_CONTROL", "simple")
+        .env("SIMPLE_BACKUP_SUFFIX", ".environment")
+        .output()
+        .unwrap();
+    success(&output);
+    assert_eq!(
+        std::fs::read(root.join("directory/source.environment")).unwrap(),
+        b"new"
+    );
+    std::fs::create_dir(root.join("inferred")).unwrap();
+    success(&run(root, "ln", &["source", "inferred"]));
+}
+
+#[test]
+fn reports_progress_for_each_mutation_and_rejects_size_overflow() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    std::fs::write(root.join("source"), b"data").unwrap();
+    std::fs::write(root.join("-native"), b"native").unwrap();
+    std::fs::create_dir_all(root.join("parent/child")).unwrap();
+    success(&run(root, "link", &["--", "-native", "native-link"]));
+    success(&run(
+        root,
+        "rmdir",
+        &["--parents", "--verbose", "parent/child"],
+    ));
+    success(&run(
+        root,
+        "truncate",
+        &["--no-create", "--size=1KB", "missing"],
+    ));
+    for args in [
+        &["-s+K", "source"][..],
+        &["-s1Kx", "source"],
+        &["-s+9223372036854775807", "source"],
+        &["-os9223372036854775807", "source"],
+    ] {
+        assert_eq!(
+            run(root, "truncate", args).status.code(),
+            Some(1),
+            "{args:?}"
+        );
+        assert_eq!(std::fs::read(root.join("source")).unwrap(), b"data");
+    }
+    std::fs::create_dir(root.join("empty")).unwrap();
+    for (utility, args) in [
+        ("link", &["source", "progress-link"][..]),
+        ("ln", &["source", "progress-ln"]),
+        ("unlink", &["progress-link"]),
+        ("rmdir", &["empty"]),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_gutil"))
+            .current_dir(root)
+            .args(["--no-config", "--progress=always", utility])
+            .args(args)
+            .output()
+            .unwrap();
+        success(&output);
+        assert!(String::from_utf8_lossy(&output.stderr).contains("operands"));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn long_symbolic_options_preserve_missing_targets_and_logical_identity() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    std::fs::write(root.join("source"), b"data").unwrap();
+    std::fs::write(root.join("target"), b"old").unwrap();
+    success(&run(
+        root,
+        "ln",
+        &[
+            "--symbolic",
+            "--relative",
+            "--force",
+            "--no-dereference",
+            "--no-target-directory",
+            "--verbose",
+            "source",
+            "target",
+        ],
+    ));
+    assert_eq!(
+        std::fs::read_link(root.join("target")).unwrap(),
+        Path::new("source")
+    );
+    assert_eq!(
+        run(root, "ln", &["--force", "--logical", "target", "source"])
+            .status
+            .code(),
+        Some(1)
+    );
+    success(&run(root, "ln", &["--physical", "target", "physical"]));
+    assert_eq!(
+        std::fs::read_link(root.join("physical")).unwrap(),
+        Path::new("source")
+    );
+    success(&run(root, "ln", &["-sf", "missing/target", "target"]));
+    assert_eq!(
+        std::fs::read_link(root.join("target")).unwrap(),
+        Path::new("missing/target")
+    );
 }

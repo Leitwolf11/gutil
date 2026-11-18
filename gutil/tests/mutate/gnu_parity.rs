@@ -112,7 +112,7 @@ fn filesystem_state_and_exit_codes_match_gnu() {
             "{utility} {args:?}"
         );
     }
-    assert_eq!(cases.len(), 84);
+    assert_eq!(cases.len(), 91);
 }
 
 fn cases() -> Vec<(&'static str, Vec<&'static str>)> {
@@ -135,6 +135,10 @@ fn cases() -> Vec<(&'static str, Vec<&'static str>)> {
         "K",
         "0Q",
         "+0Q",
+        "+K",
+        "-K",
+        "< K",
+        "% K",
         "/0",
         "%0",
         "1b",
@@ -208,6 +212,9 @@ fn link_cases() -> Vec<(&'static str, Vec<&'static str>)> {
         &["-s", "missing", "new"],
         &["-sf", "a", "a"],
         &["-sf", "a", "b"],
+        &["-sf", "missing/file", "a"],
+        &["-sf", "missing/a", "a"],
+        &["-sb", "missing/a", "a"],
         &["-f", "a", "b"],
         &["-b", "a", "b"],
         &["-b", "a", "a"],

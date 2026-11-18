@@ -4,6 +4,24 @@ use std::path::PathBuf;
 use super::{links, size, Command, Error, Removal, Request, Work};
 use crate::jobs;
 
+enum Value {
+    Size,
+    Reference,
+    Directory,
+    Suffix,
+}
+
+impl Value {
+    const fn flag(&self) -> &'static str {
+        match self {
+            Self::Size => "--size",
+            Self::Reference => "--reference",
+            Self::Directory => "--target-directory",
+            Self::Suffix => "--suffix",
+        }
+    }
+}
+
 struct Builder {
     command: Command,
     workers: jobs::Count,
@@ -152,24 +170,23 @@ impl Builder {
                 continue;
             }
             let name = match (self.command, flag) {
-                (Command::Truncate, b's') => "--size",
-                (Command::Truncate, b'r') => "--reference",
-                (Command::Ln, b't') => "--target-directory",
-                (Command::Ln, b'S') => "--suffix",
+                (Command::Truncate, b's') => Value::Size,
+                (Command::Truncate, b'r') => Value::Reference,
+                (Command::Ln, b't') => Value::Directory,
+                (Command::Ln, b'S') => Value::Suffix,
                 _ if self.flag(flag) => continue,
                 _ => return Err(Error::Option(argument.into())),
             };
             let attached = (!rest.is_empty()).then(|| native_suffix(argument, index + 2));
-            let input = value(name, attached, args)?;
-            match (self.command, flag) {
-                (Command::Truncate, b's') => self.size(input)?,
-                (Command::Truncate, b'r') => self.truncate.reference = Some(input.into()),
-                (Command::Ln, b't') => self.links.target_directory = Some(input.into()),
-                (Command::Ln, b'S') => {
+            let input = value(name.flag(), attached, args)?;
+            match name {
+                Value::Size => self.size(input)?,
+                Value::Reference => self.truncate.reference = Some(input.into()),
+                Value::Directory => self.links.target_directory = Some(input.into()),
+                Value::Suffix => {
                     self.links.suffix = Some(input);
                     self.enable_backup();
                 }
-                _ => unreachable!("value flags are selected above"),
             }
             return Ok(());
         }

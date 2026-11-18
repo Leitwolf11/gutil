@@ -81,7 +81,6 @@ impl Options {
             b'v' => self.verbose = true,
             b'f' => self.replacement = Replacement::Force,
             b'i' => self.replacement = Replacement::Interactive,
-            b'b' => self.backup = Some(Backup::Existing),
             b'd' | b'F' => {}
             _ => return false,
         }
@@ -188,8 +187,7 @@ impl Options {
         } else {
             original
         };
-        if (self.kind == Kind::Hard || backup.is_none())
-            && same_entry(identity_source, destination)?
+        if (self.kind == Kind::Hard || backup.is_none()) && same_entry(identity_source, destination)
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -216,7 +214,7 @@ impl Options {
             fs::hard_link(&source, &staged)?;
         }
         if let Some(backup) = &backup {
-            if same_entry(original, backup)? {
+            if same_entry(original, backup) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "backup would replace the source file",
@@ -224,22 +222,7 @@ impl Options {
             }
             fs::rename(destination, backup)?;
         }
-        if let Err(error) = fs::rename(&staged, destination) {
-            if let Some(backup) = backup {
-                // Restore only when no concurrent writer supplied a new name.
-                if fs::symlink_metadata(destination)
-                    .is_err_and(|error| error.kind() == io::ErrorKind::NotFound)
-                {
-                    fs::rename(&backup, destination).map_err(|restore| {
-                        io::Error::new(
-                            error.kind(),
-                            format!("{error}; backup restoration failed: {restore}"),
-                        )
-                    })?;
-                }
-            }
-            return Err(error);
-        }
+        install(&staged, destination, backup.as_deref())?;
         Ok(true)
     }
 
@@ -289,17 +272,40 @@ impl Options {
     }
 }
 
+fn install(staged: &Path, destination: &Path, backup: Option<&Path>) -> io::Result<()> {
+    if let Err(error) = fs::rename(staged, destination) {
+        if let Some(backup) = backup {
+            // Restore only when no concurrent writer supplied a new name.
+            if fs::symlink_metadata(destination)
+                .is_err_and(|error| error.kind() == io::ErrorKind::NotFound)
+            {
+                fs::rename(backup, destination).map_err(|restore| {
+                    io::Error::new(
+                        error.kind(),
+                        format!("{error}; backup restoration failed: {restore}"),
+                    )
+                })?;
+            }
+        }
+        return Err(error);
+    }
+    Ok(())
+}
+
 fn parent(path: &Path) -> &Path {
     path.parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."))
 }
 
-fn same_entry(left: &Path, right: &Path) -> io::Result<bool> {
+fn same_entry(left: &Path, right: &Path) -> bool {
     if left.file_name() != right.file_name() {
-        return Ok(false);
+        return false;
     }
-    Ok(fs::canonicalize(parent(left))? == fs::canonicalize(parent(right))?)
+    fs::canonicalize(parent(left))
+        .ok()
+        .zip(fs::canonicalize(parent(right)).ok())
+        .is_some_and(|(left, right)| left == right)
 }
 
 pub(super) fn execute(
@@ -392,5 +398,33 @@ mod tests {
             super::windows_link_error(std::io::Error::from_raw_os_error(5)).raw_os_error(),
             Some(5)
         );
+    }
+}
+
+#[cfg(test)]
+mod replacement_tests {
+    use super::install;
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn restores_a_backup_when_installing_the_prepared_link_fails() {
+        let fixture = tempfile::tempdir().unwrap();
+        let backup = fixture.path().join("backup");
+        let destination = fixture.path().join("destination");
+        let staged = fixture.path().join("missing-staged-link");
+        std::fs::write(&backup, b"original").unwrap();
+        assert!(install(&staged, &destination, Some(&backup)).is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"original");
+        assert!(!backup.exists());
+        std::fs::write(&backup, b"original-backup").unwrap();
+        std::fs::write(&destination, b"concurrent-write").unwrap();
+        assert!(install(&staged, &destination, Some(&backup)).is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"concurrent-write");
+        assert_eq!(std::fs::read(&backup).unwrap(), b"original-backup");
+        assert!(install(&staged, &destination, None).is_err());
+        std::fs::remove_file(&destination).unwrap();
+        std::fs::remove_file(&backup).unwrap();
+        let error = install(&staged, &destination, Some(&backup)).unwrap_err();
+        assert!(error.to_string().contains("backup restoration failed"));
     }
 }

@@ -1,4 +1,4 @@
-use std::fs::{File, Metadata};
+use std::fs::Metadata;
 use std::io;
 
 #[derive(Clone, Copy)]
@@ -41,6 +41,9 @@ impl Size {
             .take_while(|byte| byte.is_ascii_digit())
             .count();
         let (digits, suffix) = value.split_at(split);
+        if digits.is_empty() && matches!(adjustment, Adjustment::Extend | Adjustment::Reduce) {
+            return None;
+        }
         let amount = if digits.is_empty() && !suffix.is_empty() {
             1u128
         } else {
@@ -139,24 +142,26 @@ impl Options {
             }
             Err(error) => return Err(error),
         };
-        let metadata = file.metadata()?;
-        let current = reference.unwrap_or(metadata.len());
-        let length = if let Some(size) = self.size {
-            let block = if self.io_blocks {
-                io_block_size(&file, &metadata)?
-            } else {
-                1
-            };
-            size.apply(current, block)?
+        let (current, block) = if self.io_blocks {
+            let metadata = file.metadata()?;
+            (
+                reference.unwrap_or(metadata.len()),
+                io_block_size(&metadata)?,
+            )
+        } else if reference.is_none() && self.size.is_some_and(Size::relative) {
+            (file.metadata()?.len(), 1)
         } else {
-            current
+            (reference.unwrap_or(0), 1)
         };
+        let length = self
+            .size
+            .map_or(Ok(current), |size| size.apply(current, block))?;
         file.set_len(length)
     }
 }
 
 #[cfg(unix)]
-fn io_block_size(_file: &File, metadata: &Metadata) -> io::Result<u64> {
+fn io_block_size(metadata: &Metadata) -> io::Result<u64> {
     use std::os::unix::fs::MetadataExt;
     let block = metadata.blksize();
     if block == 0 {
@@ -169,7 +174,7 @@ fn io_block_size(_file: &File, metadata: &Metadata) -> io::Result<u64> {
 }
 
 #[cfg(not(unix))]
-fn io_block_size(_file: &File, _metadata: &Metadata) -> io::Result<u64> {
+fn io_block_size(_metadata: &Metadata) -> io::Result<u64> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "I/O block sizing is unavailable on this platform",
