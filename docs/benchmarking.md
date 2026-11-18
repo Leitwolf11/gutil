@@ -34,6 +34,7 @@ Compare timings from the same run. Long-format results include metadata formatti
 - [2026-11-17 · Linux x86-64 · file search](bench-results/2026-11-17-linux-x86-64-fd.md)
 - [2026-11-17 · Linux x86-64 · mounted filesystems](bench-results/2026-11-17-linux-x86-64-disk.md)
 - [2026-11-18 · Linux x86-64 · base encodings](bench-results/2026-11-18-linux-x86-64-encoding.md)
+- [2026-11-18 · Linux x86-64 · filesystem mutations](bench-results/2026-11-18-linux-x86-64-mutate.md)
 
 ## Checksum throughput
 
@@ -140,4 +141,27 @@ compatibility baseline.
 
 ```sh
 GNU_COREUTILS_DIR=/usr/bin cargo test --locked -p gutil --test encoding generated_cases_match_gnu_encoding_and_decoding -- --ignored
+```
+
+## Filesystem mutations
+
+Set `GNU_COREUTILS_DIR` to the directory containing GNU `link`, `ln`,
+`unlink`, `rmdir`, and `truncate`.
+
+```sh
+TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin cargo bench --locked -p gutil --bench mutate -- --noplot
+```
+
+The harness measures hard-link creation, unlinking, 512 empty-directory
+removals, and absolute resizing of one or 512 existing files. Each iteration
+receives a fresh fixture. Fixture creation and cleanup are outside the
+measured child-process interval. Verification checks the resulting content,
+file lengths, directory removals, and hard-link identity before timing.
+
+On Unix, run the reproducible state comparison against GNU Coreutils 9.12.
+It compares exit codes, stdout, directory trees, link text, file contents,
+and hard-link relationships across 91 cases.
+
+```sh
+GNU_COREUTILS_DIR=/usr/bin cargo test --locked -p gutil --test mutate filesystem_state_and_exit_codes_match_gnu -- --ignored
 ```
