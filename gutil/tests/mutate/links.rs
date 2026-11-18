@@ -153,6 +153,15 @@ fn creates_windows_symbolic_links_or_explains_developer_mode() {
         ));
         success(&run(root, "ln", &["-sfn", "source", "directory-link"]));
         assert_eq!(std::fs::read(root.join("directory-link")).unwrap(), b"data");
+        success(&run(
+            root,
+            "ln",
+            &["-sfn", "first-directory", "directory-link"],
+        ));
+        assert_eq!(
+            std::fs::read(root.join("directory-link/keep")).unwrap(),
+            b"keep"
+        );
         assert_eq!(
             std::fs::read(root.join("first-directory/keep")).unwrap(),
             b"keep"

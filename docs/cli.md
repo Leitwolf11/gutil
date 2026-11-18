@@ -483,7 +483,9 @@ except when numbered backups are explicitly selected.
 On Windows, a symbolic-link privilege failure asks the user to enable
 Developer Mode in Windows Settings and retry. Existing directory targets use
 directory symlinks. Missing targets use file symlinks. Windows requires the
-link type to be selected at creation time. [Microsoft symbolic-link API](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createsymboliclinkw)
+link type to be selected at creation time. Changing between file and
+directory links uses a prepared replacement and a rollback copy of the old
+name. A failed rollback retains that copy and reports its path. [Microsoft symbolic-link API](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createsymboliclinkw)
 
 ### rmdir
 

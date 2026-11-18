@@ -212,7 +212,17 @@ impl Options {
         let backup = backup
             .map(|plan| plan.save(original, destination))
             .transpose()?;
-        install(&staged, destination, backup.as_deref())?;
+        if let Err(failure) = install(&staged, destination, backup.as_deref()) {
+            if failure
+                .retained
+                .as_deref()
+                .is_some_and(|path| path.starts_with(staging.path()))
+            {
+                // Preserve private rollback data when its original name cannot be restored.
+                let _retained_directory = staging.keep();
+            }
+            return Err(failure.error);
+        }
         Ok(Some(if self.verbose && self.kind == Kind::Hard {
             original.to_path_buf()
         } else {
