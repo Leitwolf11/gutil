@@ -147,6 +147,7 @@ pub(super) fn decode(
 ) -> io::Result<()> {
     let mut buffer = vec![0; CHUNK];
     let mut scratch = vec![0; CHUNK];
+    let mut normalized = Vec::with_capacity(CHUNK);
     let mut decoder = Decoder {
         base,
         block: [0; 8],
@@ -158,7 +159,20 @@ pub(super) fn decode(
         if read == 0 {
             return decoder.finish(output);
         }
-        decoder.feed(&buffer[..read], ignore_garbage, &mut scratch, output)?;
+        let bytes = &buffer[..read];
+        normalized.clear();
+        let mut start = 0;
+        for newline in memchr::memchr_iter(b'\n', bytes) {
+            normalized.extend_from_slice(&bytes[start..newline]);
+            start = newline + 1;
+        }
+        let bytes = if start == 0 {
+            bytes
+        } else {
+            normalized.extend_from_slice(&bytes[start..]);
+            &normalized
+        };
+        decoder.feed(bytes, ignore_garbage, &mut scratch, output)?;
         advance(read);
     }
 }
@@ -179,6 +193,13 @@ impl Decoder {
         output: &mut impl Write,
     ) -> io::Result<()> {
         let quantum = self.base.encoded_block();
+        while self.length != 0 {
+            let Some((&byte, rest)) = bytes.split_first() else {
+                return Ok(());
+            };
+            self.push(byte, ignore_garbage, output)?;
+            bytes = rest;
+        }
         let whole = bytes.len() / quantum * quantum;
         if self.length == 0 && whole != 0 {
             let encoding = self.base.encoding();
@@ -191,22 +212,24 @@ impl Decoder {
             }
         }
         for &byte in bytes {
-            if byte == b'\n' {
-                continue;
+            self.push(byte, ignore_garbage, output)?;
+        }
+        Ok(())
+    }
+
+    fn push(&mut self, byte: u8, ignore_garbage: bool, output: &mut impl Write) -> io::Result<()> {
+        if self.table[usize::from(byte)] == u8::MAX && byte != b'=' {
+            if ignore_garbage {
+                return Ok(());
             }
-            if self.table[usize::from(byte)] == u8::MAX && byte != b'=' {
-                if ignore_garbage {
-                    continue;
-                }
-                self.flush_block(output, false, false)?;
-                return Err(invalid_input());
-            }
-            self.block[self.length] = byte;
-            self.length += 1;
-            if self.length == quantum {
-                self.flush_block(output, true, true)?;
-                self.length = 0;
-            }
+            self.flush_block(output, false, false)?;
+            return Err(invalid_input());
+        }
+        self.block[self.length] = byte;
+        self.length += 1;
+        if self.length == self.base.encoded_block() {
+            self.flush_block(output, true, true)?;
+            self.length = 0;
         }
         Ok(())
     }
