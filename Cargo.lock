@@ -805,6 +805,7 @@ version = "0.14.0"
 dependencies = [
  "ariadne",
  "atomicwrites",
+ "aws-lc-rs",
  "criterion",
  "data-encoding",
  "fs4",

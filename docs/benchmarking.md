@@ -35,6 +35,7 @@ Compare timings from the same run. Long-format results include metadata formatti
 - [2026-11-17 · Linux x86-64 · mounted filesystems](bench-results/2026-11-17-linux-x86-64-disk.md)
 - [2026-11-18 · Linux x86-64 · base encodings](bench-results/2026-11-18-linux-x86-64-encoding.md)
 - [2026-11-18 · Linux x86-64 · filesystem mutations](bench-results/2026-11-18-linux-x86-64-mutate.md)
+- [2026-11-18 · Linux x86-64 · checksum backend comparison](bench-results/2026-11-18-linux-x86-64-checksum-backend.md)
 
 ## Checksum throughput
 
@@ -51,6 +52,15 @@ files. The gutil runs use one and four workers. The GNU run uses the standalone
 utility. Each timed iteration includes process startup and discards stdout.
 The harness compares the emitted checksum records byte for byte before timing.
 Omit `GNU_COREUTILS_DIR` to compare the gutil worker settings by themselves.
+
+Set `GUTIL_BENCH_BIN` to a saved release executable to benchmark a different
+revision with the same harness. Use `--save-baseline NAME` and then
+`--baseline NAME` to compare Criterion runs. For interleaved single-file
+measurements with a saved baseline and candidate, run
+`python3 benchmarks/checksum.py BEFORE AFTER --rounds 50`. The Python harness
+checks digest output, shuffles invocation order, and emits raw timings,
+summary statistics, and binary identities as JSON. Its default GNU directory
+is `/usr/bin` and can be changed with `--gnu-dir`.
 
 ## Stream and path commands
 

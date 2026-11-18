@@ -2,10 +2,10 @@
 
 The baseline is GNU Coreutils 9.12. Its upstream program list contains 108
 standalone command names after excluding the multicall wrapper `coreutils`
-and the shared library `libstdbuf.so`. The halfway target is 54 commands.
+and the shared library `libstdbuf.so`. All 108 names are implementation targets.
 The baseline includes standalone aliases and platform-dependent commands.
 gutil's `cache` and `plug-in` commands are outside this total.
-The commands implemented below account for 31 of the 54 target names.
+The commands implemented below account for 31 of the 108 target names.
 [GNU Coreutils 9.12 program list](https://github.com/coreutils/coreutils/blob/v9.12/build-aux/gen-lists-of-programs.sh)
 
 | Group | Commands | Status |
