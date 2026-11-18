@@ -7,23 +7,23 @@ use std::path::{Component, Path, PathBuf};
 use rustc_hash::FxHashSet;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Existence {
+pub(crate) enum Existence {
     Existing,
     FinalMayBeMissing,
     AnyMayBeMissing,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Order {
+pub(crate) enum Order {
     Physical,
     Logical,
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct Mode {
-    pub(super) existence: Existence,
-    pub(super) order: Order,
-    pub(super) strip: bool,
+pub(crate) struct Mode {
+    pub(crate) existence: Existence,
+    pub(crate) order: Order,
+    pub(crate) strip: bool,
 }
 
 impl Default for Mode {
@@ -36,7 +36,7 @@ impl Default for Mode {
     }
 }
 
-pub(super) fn resolve(path: &Path, cwd: &Path, mode: Mode) -> io::Result<PathBuf> {
+pub(crate) fn resolve(path: &Path, cwd: &Path, mode: Mode) -> io::Result<PathBuf> {
     if path.as_os_str().is_empty() {
         return Err(io::Error::new(io::ErrorKind::NotFound, "empty path"));
     }
@@ -63,7 +63,7 @@ pub(super) fn resolve(path: &Path, cwd: &Path, mode: Mode) -> io::Result<PathBuf
     }
 }
 
-pub(super) fn current_directory() -> io::Result<PathBuf> {
+pub(crate) fn current_directory() -> io::Result<PathBuf> {
     #[cfg(windows)]
     {
         // Windows may expose an abbreviated directory in the process cwd.
@@ -246,7 +246,7 @@ fn allow_failure(
     }
 }
 
-pub(super) fn relative(path: &Path, base: &Path) -> Option<PathBuf> {
+pub(crate) fn relative(path: &Path, base: &Path) -> Option<PathBuf> {
     let mut path = path.components().peekable();
     let mut base = base.components().peekable();
     while path.peek().is_some_and(|left| Some(left) == base.peek()) {
