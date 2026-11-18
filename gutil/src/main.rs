@@ -2,6 +2,7 @@ mod cache;
 mod cat;
 mod checksum;
 mod config;
+mod disk;
 mod edges;
 mod fd;
 mod file_size;
@@ -23,7 +24,7 @@ use presentation::Presentation;
 use std::io::{self, BufWriter, IsTerminal, Write};
 use std::process::ExitCode;
 
-const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  fd       Find files and directories\n  basename  Print the final component of a path\n  dirname   Print the directory portion of a path\n  readlink  Print symbolic link targets\n  realpath  Print resolved paths\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  head     Print the beginning of files\n  tail     Print the end of files\n  wc       Count lines, words, and bytes\n  md5sum   Print or verify MD5 checksums\n  sha1sum  Print or verify SHA-1 checksums\n  sha224sum, sha256sum, sha384sum, sha512sum  Print or verify SHA-2 checksums\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n  echo, yes          Write text\n  false, true        Return a fixed exit status\n  nproc, printenv    Report processor or environment information\n  sleep              Pause for a duration\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
+const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  df, duf  Report mounted filesystem usage\n  fd       Find files and directories\n  basename  Print the final component of a path\n  dirname   Print the directory portion of a path\n  readlink  Print symbolic link targets\n  realpath  Print resolved paths\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  head     Print the beginning of files\n  tail     Print the end of files\n  wc       Count lines, words, and bytes\n  md5sum   Print or verify MD5 checksums\n  sha1sum  Print or verify SHA-1 checksums\n  sha224sum, sha256sum, sha384sum, sha512sum  Print or verify SHA-2 checksums\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n  echo, yes          Write text\n  false, true        Return a fixed exit status\n  nproc, printenv    Report processor or environment information\n  sleep              Pause for a duration\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
 
 fn main() -> ExitCode {
     // Discard argv[0] and preserve non-UTF-8 filesystem operands.
@@ -54,6 +55,7 @@ enum Command {
     Cat,
     Checksum(checksum::Algorithm),
     Edge(edges::Edge),
+    Disk(disk::Command),
     Fd,
     Ls,
     Path(paths::Command),
@@ -75,6 +77,8 @@ impl Command {
             Some("realpath") => Self::Path(paths::Command::Realpath),
             Some("cache") => Self::Cache,
             Some("cat") => Self::Cat,
+            Some("df") => Self::Disk(disk::Command::Df),
+            Some("duf") => Self::Disk(disk::Command::Duf),
             Some("fd") => Self::Fd,
             Some("head") => Self::Edge(edges::Edge::Head),
             Some("tail") => Self::Edge(edges::Edge::Tail),
@@ -156,6 +160,9 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         Command::Edge(edge) => return edges::run(edge, args, job_count, ui),
         Command::Wc => return wc::run(args, job_count, ui),
         Command::Shell(command) => return shell::run(command, args, ui),
+        Command::Disk(command) => {
+            return disk::run(command, args, job_count, settings.output.color, ui)
+        }
         Command::Fd => return fd::run(args, job_count, ui),
         _ => {}
     }
@@ -235,6 +242,7 @@ fn direct_help_or_version(command: Command, option: Option<&str>) -> bool {
         Command::Cache
             | Command::Cat
             | Command::Checksum(_)
+            | Command::Disk(_)
             | Command::Edge(_)
             | Command::Fd
             | Command::Ls

@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 
 use crate::{jobs, presentation::Presentation};
 
-mod canonical;
+pub(crate) mod canonical;
 mod names;
 mod resolve;
 
