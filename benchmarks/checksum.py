@@ -9,9 +9,35 @@ from pathlib import Path
 import platform
 import random
 import statistics
-import subprocess
+import subprocess  # nosec B404 -- This harness launches user-selected benchmark executables.
 import tempfile
 import time
+
+ALGORITHMS = (
+    ("md5sum", "md5"), ("sha1sum", "sha1"), ("sha224sum", "sha224"),
+    ("sha256sum", "sha256"), ("sha384sum", "sha384"), ("sha512sum", "sha512"),
+)
+
+
+def executable(path):
+    resolved = path.resolve(strict=True)
+    if not resolved.is_file() or not os.access(resolved, os.X_OK):
+        raise ValueError(f"Expected a regular executable file: {resolved}")
+    return resolved
+
+
+def run_command(arguments, directory, environment, output):
+    # Callers supply validated executables and a fixed checksum command allowlist.
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+    return subprocess.run(arguments,  # nosec B603 -- Explicitly selected benchmark executable, shell=False.
+        cwd=directory,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=output,
+        stderr=subprocess.PIPE,
+        check=False,
+        shell=False,
+    )
 
 
 def summarize(values):
@@ -25,15 +51,7 @@ def summarize(values):
 
 def measure(arguments, directory, environment, expected):
     start = time.perf_counter_ns()
-    result = subprocess.run(
-        arguments,
-        cwd=directory,
-        env=environment,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    result = run_command(arguments, directory, environment, subprocess.DEVNULL)
     elapsed = (time.perf_counter_ns() - start) / 1_000_000
     if result.returncode != expected:
         raise RuntimeError(f"{arguments!r}: {result.returncode}: {result.stderr!r}")
@@ -41,7 +59,8 @@ def measure(arguments, directory, environment, expected):
 
 
 def run(options, directory):
-    binaries = {"before": options.before.resolve(), "after": options.after.resolve()}
+    binaries = {"before": executable(options.before), "after": executable(options.after)}
+    references = {command: executable(options.gnu_dir / command) for command, _ in ALGORITHMS}
     environment = dict(os.environ, LC_ALL="C", TZ="UTC")
     for variable in ("VERSION_CONTROL", "SIMPLE_BACKUP_SUFFIX", "POSIXLY_CORRECT"):
         environment.pop(variable, None)
@@ -50,15 +69,12 @@ def run(options, directory):
     cases = [
         (
             f"{command}/16MiB", command, ["payload"],
-            f"{getattr(hashlib, algorithm)(payload).hexdigest()}  payload\n".encode(), 0,
+            f"{getattr(hashlib, algorithm)(payload, usedforsecurity=False).hexdigest()}  payload\n".encode(), 0,
         )
-        for command, algorithm in [
-            ("md5sum", "md5"), ("sha1sum", "sha1"), ("sha224sum", "sha224"),
-            ("sha256sum", "sha256"), ("sha384sum", "sha384"), ("sha512sum", "sha512")
-        ]
+        for command, algorithm in ALGORITHMS
     ]
     results = {}
-    generator = random.Random(options.seed)
+    generator = random.Random(options.seed)  # nosec B311 -- Reproducible benchmark invocation order.
     for name, command, operands, output, status in cases:
         invocations = {
             label: [
@@ -67,12 +83,9 @@ def run(options, directory):
             ]
             for label, binary in binaries.items()
         }
-        invocations["gnu"] = [str(options.gnu_dir.resolve() / command), *operands]
+        invocations["gnu"] = [str(references[command]), *operands]
         for arguments in invocations.values():
-            check = subprocess.run(
-                arguments, cwd=directory, env=environment,
-                capture_output=True, check=False,
-            )
+            check = run_command(arguments, directory, environment, subprocess.PIPE)
             if check.returncode != status or check.stdout != output or check.stderr:
                 raise RuntimeError(f"Verification failed: {arguments!r}: {check!r}")
 
@@ -126,8 +139,11 @@ def main():
     options = parser.parse_args()
     if options.rounds < 2 or options.warmup < 0:
         parser.error("--rounds must be at least 2 and --warmup must be nonnegative")
-    with tempfile.TemporaryDirectory(prefix="gutil-checksum-") as temporary:
-        print(json.dumps(run(options, Path(temporary)), indent=2))
+    try:
+        with tempfile.TemporaryDirectory(prefix="gutil-checksum-") as temporary:
+            print(json.dumps(run(options, Path(temporary)), indent=2))
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
 
 
 if __name__ == "__main__":

@@ -99,8 +99,8 @@ candidate executable. `GUTIL_BENCH_BIN` resolves relative paths before the
 child enters its fixture directory.
 
 ```sh
-TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin GUTIL_BENCH_BIN=target/release/gutil-checksum-before-20261118 cargo bench --locked -p gutil --bench checksum -- --noplot --save-baseline rustcrypto-before
-TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin GUTIL_BENCH_BIN=target/release/gutil-checksum-final-20261118 cargo bench --locked -p gutil --bench checksum -- --noplot --baseline rustcrypto-before
+TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin GUTIL_BENCH_BIN=target/release/gutil-checksum-before-20261118 cargo bench --locked -p gutil --bench checksum -- --noplot --sample-size 10 --warm-up-time 0.4 --measurement-time 2 --save-baseline rustcrypto-before
+TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin GUTIL_BENCH_BIN=target/release/gutil-checksum-final-20261118 cargo bench --locked -p gutil --bench checksum -- --noplot --sample-size 10 --warm-up-time 0.4 --measurement-time 2 --baseline rustcrypto-before
 TMPDIR=/tmp taskset -c 3 python3 benchmarks/checksum.py target/release/gutil-checksum-before-20261118 target/release/gutil-checksum-final-20261118 --rounds 50
 ```
 
