@@ -1,4 +1,4 @@
-use std::fs::Metadata;
+use std::fs::{File, Metadata};
 use std::io;
 
 #[derive(Clone, Copy)]
@@ -131,11 +131,7 @@ impl Options {
         path: &std::path::Path,
         reference: Option<u64>,
     ) -> io::Result<()> {
-        let file = match std::fs::OpenOptions::new()
-            .write(true)
-            .create(!self.no_create)
-            .open(path)
-        {
+        let file = match open(path, self.no_create) {
             Ok(file) => file,
             Err(error) if self.no_create && error.kind() == io::ErrorKind::NotFound => {
                 return Ok(())
@@ -192,4 +188,29 @@ fn io_block_size(_metadata: &Metadata, _path: &std::path::Path) -> io::Result<u6
         io::ErrorKind::Unsupported,
         "I/O block sizing is unavailable on this platform",
     ))
+}
+
+#[cfg(unix)]
+fn open(path: &std::path::Path, no_create: bool) -> io::Result<File> {
+    use rustix::fs::{Mode, OFlags};
+    let create = if no_create {
+        OFlags::empty()
+    } else {
+        OFlags::CREATE
+    };
+    rustix::fs::open(
+        path,
+        OFlags::WRONLY | OFlags::NONBLOCK | OFlags::CLOEXEC | create,
+        Mode::from_raw_mode(0o666),
+    )
+    .map(File::from)
+    .map_err(io::Error::from)
+}
+
+#[cfg(not(unix))]
+fn open(path: &std::path::Path, no_create: bool) -> io::Result<File> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(!no_create)
+        .open(path)
 }

@@ -473,9 +473,12 @@ directory, or sources with `--target-directory`.
 
 `VERSION_CONTROL` selects the default backup policy when backups are requested.
 `SIMPLE_BACKUP_SUFFIX` defaults to `~`. Replacement links are prepared in a
-temporary directory beside the destination. If installation fails after a
-backup is made, gutil attempts to restore the old name while preserving a
-concurrently created destination. Recovery failures are reported.
+temporary directory beside the destination. Numbered backups use an atomic no-replace rename and retry with the next
+number on collision. If installation fails after a backup is made, gutil
+restores it with an atomic no-replace rename. A concurrently created
+destination is preserved and the retained backup path is reported on conflict.
+Force mode protects hard-link names created earlier in the same invocation,
+except when numbered backups are explicitly selected.
 
 On Windows, a symbolic-link privilege failure asks the user to enable
 Developer Mode in Windows Settings and retry. Existing directory targets use
@@ -507,7 +510,8 @@ such as `KB` or `MB`. Modifiers `+` and `-` extend and reduce the base size,
 `<` and `>` impose a maximum or minimum, `/` rounds down to a multiple, and
 `%` rounds up. Reductions stop at zero. Invalid sizes and division by zero
 are rejected before processing files. Arithmetic overflow is reported for
-the affected operand.
+the affected operand. Unix file operands are opened nonblockingly, so a FIFO
+error does not prevent later operands from being processed.
 
 ```sh
 gutil ln --symbolic --relative source.txt links/source.txt

@@ -1,4 +1,4 @@
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -14,25 +14,13 @@ pub(super) enum Replacement {
     Interactive,
 }
 
-#[derive(Clone, Copy)]
-pub(super) enum Backup {
-    Off,
-    Simple,
-    Numbered,
-    Existing,
-}
+pub(super) use backup::Policy as Backup;
 
-impl Backup {
-    pub(super) fn parse(value: &OsStr) -> Option<Self> {
-        match value.as_encoded_bytes() {
-            b"none" | b"off" => Some(Self::Off),
-            b"simple" | b"never" => Some(Self::Simple),
-            b"numbered" | b"t" => Some(Self::Numbered),
-            b"existing" | b"nil" => Some(Self::Existing),
-            _ => None,
-        }
-    }
-}
+mod backup;
+mod identity;
+mod replace;
+
+use replace::install;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 enum Kind {
@@ -89,7 +77,7 @@ impl Options {
 
     fn plan(&self, mut paths: Vec<PathBuf>) -> io::Result<Vec<(PathBuf, PathBuf)>> {
         let invalid = |message| io::Error::new(io::ErrorKind::InvalidInput, message);
-        if self.relative && !(self.kind == Kind::Symbolic) {
+        if self.relative && self.kind != Kind::Symbolic {
             return Err(invalid("--relative requires --symbolic"));
         }
         if (self.destination == Destination::Direct) && self.target_directory.is_some() {
@@ -148,7 +136,7 @@ impl Options {
             let parent = canonical::resolve(parent(target), &cwd, mode)?;
             return Ok(canonical::relative(&source, &parent).unwrap_or(source));
         }
-        if (self.follow == Follow::Logical) && !(self.kind == Kind::Symbolic) {
+        if self.follow == Follow::Logical && self.kind != Kind::Symbolic {
             return fs::canonicalize(source);
         }
         Ok(source.to_path_buf())
@@ -162,13 +150,24 @@ impl Options {
         }
     }
 
-    fn link(&self, source: &Path, destination: &Path, errors: &mut impl Write) -> io::Result<bool> {
+    fn link(
+        &self,
+        source: &Path,
+        destination: &Path,
+        errors: &mut impl Write,
+    ) -> io::Result<Option<PathBuf>> {
         let original = source;
         let source = self.source(source, destination)?;
         // First try the operation directly. Force replacement prepares the new
         // link before changing an existing destination.
         match self.create(&source, destination) {
-            Ok(()) => return Ok(true),
+            Ok(()) => {
+                return Ok(Some(if self.verbose && self.kind == Kind::Hard {
+                    original.to_path_buf()
+                } else {
+                    source
+                }))
+            }
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error),
         }
@@ -178,20 +177,17 @@ impl Options {
                 "cannot replace a directory with a link",
             ));
         }
-        let backup = self.backup(destination)?;
+        let backup = backup::Plan::new(destination, self.backup, self.suffix.as_deref())?;
         if matches!(self.replacement, Replacement::Refuse) && backup.is_none() {
             return Err(io::ErrorKind::AlreadyExists.into());
         }
-        let identity_source = if self.kind == Kind::Hard && self.follow == Follow::Logical {
-            &source
-        } else {
-            original
-        };
-        if (self.kind == Kind::Hard || backup.is_none()) && same_entry(identity_source, destination)
+        let follows_source = self.kind == Kind::Symbolic || self.follow == Follow::Logical;
+        if (self.kind == Kind::Hard || backup.is_none())
+            && identity::loses_source(original, destination, follows_source)
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "source and destination are the same file name",
+                "source and destination refer to the same file",
             ));
         }
         if matches!(self.replacement, Replacement::Interactive) {
@@ -200,7 +196,7 @@ impl Options {
             let mut response = String::new();
             io::stdin().lock().read_line(&mut response)?;
             if !response.trim_start().starts_with(['y', 'Y']) {
-                return Ok(false);
+                return Ok(None);
             }
         }
         let staging = tempfile::Builder::new()
@@ -213,83 +209,16 @@ impl Options {
         } else {
             fs::hard_link(&source, &staged)?;
         }
-        if let Some(backup) = &backup {
-            if same_entry(original, backup) {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "backup would replace the source file",
-                ));
-            }
-            fs::rename(destination, backup)?;
-        }
+        let backup = backup
+            .map(|plan| plan.save(original, destination))
+            .transpose()?;
         install(&staged, destination, backup.as_deref())?;
-        Ok(true)
-    }
-
-    fn backup(&self, destination: &Path) -> io::Result<Option<PathBuf>> {
-        let backup = self.backup.unwrap_or(Backup::Off);
-        if matches!(backup, Backup::Off) {
-            return Ok(None);
-        }
-        let mut numbered = 0u64;
-        if matches!(backup, Backup::Numbered | Backup::Existing) {
-            let mut prefix = destination.file_name().unwrap_or_default().to_os_string();
-            prefix.push(".~");
-            for entry in fs::read_dir(parent(destination))? {
-                let name = entry?.file_name();
-                if let Some(number) = name
-                    .as_encoded_bytes()
-                    .strip_prefix(prefix.as_encoded_bytes())
-                    .and_then(|value| value.strip_suffix(b"~"))
-                {
-                    if let Ok(number) = std::str::from_utf8(number).unwrap_or("").parse::<u64>() {
-                        numbered = numbered.max(number);
-                    }
-                }
-            }
-        }
-        let suffix = if matches!(backup, Backup::Numbered) || numbered != 0 {
-            let next = numbered
-                .checked_add(1)
-                .ok_or_else(|| io::Error::other("backup number overflow"))?;
-            OsString::from(format!(".~{next}~"))
+        Ok(Some(if self.verbose && self.kind == Kind::Hard {
+            original.to_path_buf()
         } else {
-            self.suffix
-                .clone()
-                .or_else(|| std::env::var_os("SIMPLE_BACKUP_SUFFIX"))
-                .unwrap_or_else(|| "~".into())
-        };
-        let mut name = destination.as_os_str().to_os_string();
-        name.push(suffix);
-        let backup = PathBuf::from(name);
-        if backup == destination {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "backup suffix must change the destination name",
-            ));
-        }
-        Ok(Some(backup))
+            source
+        }))
     }
-}
-
-fn install(staged: &Path, destination: &Path, backup: Option<&Path>) -> io::Result<()> {
-    if let Err(error) = fs::rename(staged, destination) {
-        if let Some(backup) = backup {
-            // Restore only when no concurrent writer supplied a new name.
-            if fs::symlink_metadata(destination)
-                .is_err_and(|error| error.kind() == io::ErrorKind::NotFound)
-            {
-                fs::rename(backup, destination).map_err(|restore| {
-                    io::Error::new(
-                        error.kind(),
-                        format!("{error}; backup restoration failed: {restore}"),
-                    )
-                })?;
-            }
-        }
-        return Err(error);
-    }
-    Ok(())
 }
 
 fn parent(path: &Path) -> &Path {
@@ -299,13 +228,7 @@ fn parent(path: &Path) -> &Path {
 }
 
 fn same_entry(left: &Path, right: &Path) -> bool {
-    if left.file_name() != right.file_name() {
-        return false;
-    }
-    fs::canonicalize(parent(left))
-        .ok()
-        .zip(fs::canonicalize(parent(right)).ok())
-        .is_some_and(|(left, right)| left == right)
+    identity::same_entry(left, right)
 }
 
 pub(super) fn execute(
@@ -317,19 +240,44 @@ pub(super) fn execute(
     mut progress: Option<&mut ProgressReport>,
 ) -> io::Result<bool> {
     let mut failed = false;
-    for (source, target) in options.plan(paths)? {
-        match options.link(&source, &target, errors) {
-            Ok(created) if created && options.verbose => writeln!(
-                output,
-                "{} {} {}",
-                super::quote(&target),
-                if options.kind == Kind::Symbolic {
-                    "->"
-                } else {
-                    "=>"
-                },
-                super::quote(&source)
-            )?,
+    let plan = options.plan(paths)?;
+    let protect_created = plan.len() > 1
+        && options.kind == Kind::Hard
+        && matches!(options.replacement, Replacement::Force)
+        && options.backup != Some(Backup::Numbered);
+    let mut created = rustc_hash::FxHashSet::default();
+    for (source, target) in plan {
+        let result = if protect_created
+            && identity::key(&target).is_some_and(|key| created.contains(&key))
+        {
+            Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "will not overwrite a destination created earlier in this invocation",
+            ))
+        } else {
+            options.link(&source, &target, errors)
+        };
+        match result {
+            Ok(Some(text)) => {
+                if protect_created {
+                    if let Some(key) = identity::key(&target) {
+                        created.insert(key);
+                    }
+                }
+                if options.verbose {
+                    writeln!(
+                        output,
+                        "{} {} {}",
+                        super::quote(&target),
+                        if options.kind == Kind::Symbolic {
+                            "->"
+                        } else {
+                            "=>"
+                        },
+                        super::quote(&text)
+                    )?;
+                }
+            }
             Ok(_) => {}
             Err(error) => {
                 ui.error(
@@ -398,33 +346,5 @@ mod tests {
             super::windows_link_error(std::io::Error::from_raw_os_error(5)).raw_os_error(),
             Some(5)
         );
-    }
-}
-
-#[cfg(test)]
-mod replacement_tests {
-    use super::install;
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    fn restores_a_backup_when_installing_the_prepared_link_fails() {
-        let fixture = tempfile::tempdir().unwrap();
-        let backup = fixture.path().join("backup");
-        let destination = fixture.path().join("destination");
-        let staged = fixture.path().join("missing-staged-link");
-        std::fs::write(&backup, b"original").unwrap();
-        assert!(install(&staged, &destination, Some(&backup)).is_err());
-        assert_eq!(std::fs::read(&destination).unwrap(), b"original");
-        assert!(!backup.exists());
-        std::fs::write(&backup, b"original-backup").unwrap();
-        std::fs::write(&destination, b"concurrent-write").unwrap();
-        assert!(install(&staged, &destination, Some(&backup)).is_err());
-        assert_eq!(std::fs::read(&destination).unwrap(), b"concurrent-write");
-        assert_eq!(std::fs::read(&backup).unwrap(), b"original-backup");
-        assert!(install(&staged, &destination, None).is_err());
-        std::fs::remove_file(&destination).unwrap();
-        std::fs::remove_file(&backup).unwrap();
-        let error = install(&staged, &destination, Some(&backup)).unwrap_err();
-        assert!(error.to_string().contains("backup restoration failed"));
     }
 }

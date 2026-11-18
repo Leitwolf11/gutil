@@ -806,6 +806,7 @@ dependencies = [
  "parking_lot 0.13.0",
  "proptest",
  "regex",
+ "renamore",
  "reqwest",
  "rustc-hash",
  "rustix 1.1.6",
@@ -825,6 +826,7 @@ dependencies = [
  "unicode-width",
  "wasmi",
  "wasmi_wasi",
+ "winapi-util",
 ]
 
 [[package]]
@@ -1827,6 +1829,16 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "renamore"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f5bced8a18df26d088a61a8f314d853ad18705b0aee59b43ccc088ca4bc3670"
+dependencies = [
+ "cc",
+ "tempfile",
+]
 
 [[package]]
 name = "reqwest"

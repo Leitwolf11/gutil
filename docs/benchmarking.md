@@ -160,7 +160,7 @@ file lengths, directory removals, and hard-link identity before timing.
 
 On Unix, run the reproducible state comparison against GNU Coreutils 9.12.
 It compares exit codes, stdout, directory trees, link text, file contents,
-and hard-link relationships across 91 cases.
+and hard-link relationships across 101 cases.
 
 ```sh
 GNU_COREUTILS_DIR=/usr/bin cargo test --locked -p gutil --test mutate filesystem_state_and_exit_codes_match_gnu -- --ignored

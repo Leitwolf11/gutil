@@ -112,7 +112,7 @@ fn filesystem_state_and_exit_codes_match_gnu() {
             "{utility} {args:?}"
         );
     }
-    assert_eq!(cases.len(), 91);
+    assert_eq!(cases.len(), 101);
 }
 
 fn cases() -> Vec<(&'static str, Vec<&'static str>)> {
@@ -235,6 +235,16 @@ fn link_cases() -> Vec<(&'static str, Vec<&'static str>)> {
         &["-t", "a", "b"],
         &["-stempty", "a", "dangling"],
         &["-sT", "a", "dirlink"],
+        &["-sf", "symlink", "a"],
+        &["-Pf", "symlink", "a"],
+        &["-sf", "symlink", "symlink"],
+        &["-sf", "a", "symlink"],
+        &["-srv", "a", "empty/new"],
+        &["-Lv", "symlink", "new"],
+        &["-ft", "empty", "a", "dir/../a"],
+        &["--backup=numbered", "-ft", "empty", "a", "dir/../a"],
+        &["-bft", "empty", "a", "dir/../a"],
+        &["-srft", "empty", "a", "dir/../a"],
     ] {
         cases.push(("ln", args.to_vec()));
     }
