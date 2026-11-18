@@ -7,6 +7,9 @@ use std::process::{Command, Output, Stdio};
 
 use tempfile::tempdir;
 
+#[path = "plugin/revisions.rs"]
+mod revisions;
+
 fn gutil(dir: &Path) -> Command {
     let mut process = Command::new(env!("CARGO_BIN_EXE_gutil"));
     process
@@ -43,6 +46,8 @@ fn validates_syntax_and_reports_uninstalled_commands() {
         &["plug-in", "install", "https://github.com/owner/repo"],
         &["plug-in", "install", "github.com:owner/repo/extra"],
         &["plug-in", "install", "github.com:owner/.."],
+        &["plug-in", "install", "github.com:owner/repo@"],
+        &["plug-in", "install", "github.com:owner/repo@v4..old"],
         &["plug-in", "use", "../command"],
         &["plug-in", "use", "MixedCase"],
     ] {

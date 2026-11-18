@@ -11,11 +11,15 @@ use wasmi_wasi::{ambient_authority, Dir, WasiCtxBuilder};
 use crate::config;
 use crate::presentation::Presentation;
 
+mod source;
+
+use source::GitHubSource;
+
 const LABEL: &str = "gutil plug-in";
 const BINARY_PREFIX: &str = "gutil-";
 const MODULE_SUFFIX: &str = ".wasm";
 const WASI_TARGET: &str = "wasm32-wasip1";
-const HELP: &str = "Usage: gutil plug-in install github.com:OWNER/EXTENSION\n       gutil plug-in use COMMAND [ARGUMENTS]...\n\nInstall a Rust plug-in from GitHub or run an installed plug-in.\nThe binary target must be named gutil-<command> and compile for wasm32-wasip1.\n";
+const HELP: &str = "Usage: gutil plug-in install github.com:OWNER/REPOSITORY[@TAG|@COMMIT]\n       gutil plug-in use COMMAND [ARGUMENTS]...\n\nInstall a Rust plug-in from GitHub or run an installed plug-in.\nUse @v4 to select a tag or @<commit-hash> to select a commit.\nOmit the selector to build the repository's default branch.\nThe binary target must be named gutil-<command> and compile for wasm32-wasip1.\n";
 
 enum Request {
     Help,
@@ -26,10 +30,12 @@ enum Request {
 
 #[derive(Debug, thiserror::Error)]
 enum ParseError {
-    #[error("expected 'install github.com:OWNER/EXTENSION' or 'use COMMAND' (see 'gutil plug-in --help')")]
+    #[error("expected 'install github.com:OWNER/REPOSITORY[@TAG|@COMMIT]' or 'use COMMAND' (see 'gutil plug-in --help')")]
     Usage,
-    #[error("expected a GitHub source in the form github.com:OWNER/EXTENSION")]
+    #[error("expected a GitHub source in the form github.com:OWNER/REPOSITORY[@TAG|@COMMIT]")]
     Source,
+    #[error("expected a valid Git tag or commit hash after '@'")]
+    Revision,
     #[error("plug-in command names must start with a lowercase ASCII letter and contain only lowercase ASCII letters, digits, and hyphens")]
     Command,
 }
@@ -49,43 +55,6 @@ impl Request {
             }
             _ => Err(ParseError::Usage),
         }
-    }
-}
-
-struct GitHubSource {
-    owner: String,
-    repository: String,
-}
-
-impl GitHubSource {
-    fn parse(argument: &OsStr) -> Result<Self, ParseError> {
-        let (owner, repository) = argument
-            .to_str()
-            .and_then(|argument| argument.strip_prefix("github.com:"))
-            .and_then(|path| path.split_once('/'))
-            .ok_or(ParseError::Source)?;
-        if owner.is_empty()
-            || !owner
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-            || owner.starts_with('-')
-            || owner.ends_with('-')
-            || repository.is_empty()
-            || matches!(repository, "." | "..")
-            || !repository
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
-        {
-            return Err(ParseError::Source);
-        }
-        Ok(Self {
-            owner: owner.to_owned(),
-            repository: repository.to_owned(),
-        })
-    }
-
-    fn url(&self) -> String {
-        format!("https://github.com/{}/{}", self.owner, self.repository)
     }
 }
 
@@ -151,17 +120,13 @@ fn directory() -> io::Result<PathBuf> {
 fn install(source: &GitHubSource) -> io::Result<u8> {
     let directory = directory()?;
     let staging = tempfile::tempdir()?;
-    let status = Command::new("cargo")
+    let mut cargo = Command::new("cargo");
+    cargo
         .current_dir(staging.path())
-        .args([
-            "install",
-            "--locked",
-            "--target",
-            WASI_TARGET,
-            "--git",
-            &source.url(),
-            "--root",
-        ])
+        .args(["install", "--locked", "--target", WASI_TARGET]);
+    source.configure_cargo(&mut cargo);
+    let status = cargo
+        .arg("--root")
         .arg(staging.path())
         .status()
         .map_err(|error| io::Error::new(error.kind(), format!("cannot run cargo: {error}")))?;

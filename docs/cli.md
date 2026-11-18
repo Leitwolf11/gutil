@@ -100,8 +100,10 @@ The local cache is enabled by default. An enabled remote cache can serve local m
 
 ## plug-in
 
-`gutil plug-in install github.com:OWNER/EXTENSION` builds and installs a Rust
-plug-in from GitHub. `gutil plug-in use COMMAND [ARGUMENTS]...` runs the
+`gutil plug-in install github.com:OWNER/REPOSITORY[@TAG|@COMMIT]` builds and
+installs a Rust plug-in from GitHub. Omit the selector for the default branch,
+use `@v4` for a tag, or append a commit hash to pin a revision.
+`gutil plug-in use COMMAND [ARGUMENTS]...` runs the
 installed command and forwards every remaining argument to it.
 [Plug-in installation and SDK](plug-ins.md)
 
