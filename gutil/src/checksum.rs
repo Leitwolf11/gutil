@@ -3,18 +3,18 @@ use std::fs::{self, File};
 use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
-use md5::Md5;
-use sha1::Sha1;
-use sha2::{Digest, Sha224, Sha256, Sha384, Sha512};
 use smallvec::SmallVec;
 
 use crate::jobs;
 use crate::presentation::{Presentation, ProgressReport};
 
+mod hash;
 mod record;
 mod verify;
 
-const BUFFER_SIZE: usize = 8 * 1024;
+use hash::digest;
+
+const BUFFER_SIZE: usize = 64 * 1024;
 const PARALLEL_MIN_BYTES: u64 = 1024 * 1024;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -277,7 +277,7 @@ async fn execute(
             Some(
                 jobs::map(paths, workers, move |path| {
                     let result = File::open(&path).and_then(|mut file| {
-                        digest(algorithm, &mut file, &mut [0; BUFFER_SIZE], |_| {})
+                        digest(algorithm, &mut file, &mut vec![0; BUFFER_SIZE], |_| {})
                     });
                     (path, result)
                 })
@@ -389,47 +389,4 @@ impl<W: Write> Checksum<'_, W> {
     fn error(&mut self, message: &str) -> io::Result<()> {
         self.ui.error(self.errors, self.algorithm.label(), message)
     }
-}
-
-fn digest(
-    algorithm: Algorithm,
-    input: &mut dyn Read,
-    buffer: &mut [u8],
-    advance: impl FnMut(u64),
-) -> io::Result<String> {
-    match algorithm {
-        Algorithm::Md5 => read_digest::<Md5, _>(input, buffer, advance),
-        Algorithm::Sha1 => read_digest::<Sha1, _>(input, buffer, advance),
-        Algorithm::Sha224 => read_digest::<Sha224, _>(input, buffer, advance),
-        Algorithm::Sha256 => read_digest::<Sha256, _>(input, buffer, advance),
-        Algorithm::Sha384 => read_digest::<Sha384, _>(input, buffer, advance),
-        Algorithm::Sha512 => read_digest::<Sha512, _>(input, buffer, advance),
-    }
-}
-
-fn read_digest<D: Digest, F: FnMut(u64)>(
-    input: &mut dyn Read,
-    buffer: &mut [u8],
-    mut advance: F,
-) -> io::Result<String> {
-    const HEX: &[u8] = b"0123456789abcdef";
-    let mut digest = D::new();
-    loop {
-        match input.read(buffer) {
-            Ok(0) => break,
-            Ok(read) => {
-                digest.update(&buffer[..read]);
-                advance(read as u64);
-            }
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-            Err(error) => return Err(error),
-        }
-    }
-    let bytes = digest.finalize();
-    let mut hex = String::with_capacity(bytes.len() * 2);
-    for &byte in &bytes {
-        hex.push(char::from(HEX[usize::from(byte >> 4)]));
-        hex.push(char::from(HEX[usize::from(byte & 15)]));
-    }
-    Ok(hex)
 }
