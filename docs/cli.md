@@ -432,3 +432,94 @@ gutil base64 -w0 file.bin
 gutil base64 --decode encoded.txt
 gutil base32 --wrap=32 file.bin
 ```
+
+## Links, empty directories, and file sizes
+
+These commands execute filesystem operations inside gutil's asynchronous
+runtime. Operands run in input order, including repeated names and hard-link
+aliases. The shared `-j`, `--jobs`, and `--threads` flags bound runtime workers.
+`--progress=auto|never|always` controls progress on stderr. Processing continues
+with later operands after an individual failure and returns status 1 if any
+operation failed.
+
+### link and unlink
+
+`gutil link FILE1 FILE2` creates one hard link. `gutil unlink FILE` removes
+one name. Both accept `--` before names beginning with `-` and expose
+command-specific `--help` and `--version` options. Existing destination
+names are preserved when `link` fails.
+
+### ln
+
+`gutil ln` creates hard links by default. It accepts a source and destination,
+a single source for the current directory, multiple sources followed by a
+directory, or sources with `--target-directory`.
+
+| Option | Behavior |
+| --- | --- |
+| `-s`, `--symbolic` | Create symbolic links, including links to missing targets. |
+| `-f`, `--force` | Replace existing destination files. Prepare the new link before replacing the old name. |
+| `-i`, `--interactive` | Ask on stderr before replacement and read an answer from stdin. |
+| `-L`, `--logical` | Follow source symbolic links when making hard links. |
+| `-P`, `--physical` | Make hard links to source symlinks themselves where supported. This is the default. |
+| `-n`, `--no-dereference` | Treat a destination symlink to a directory as a file name. |
+| `-r`, `--relative` | With `--symbolic`, compute link text relative to the destination directory. |
+| `-t DIR`, `--target-directory=DIR` | Create links in DIR. |
+| `-T`, `--no-target-directory` | Treat the destination as a file name. |
+| `-b`, `--backup[=CONTROL]` | Back up existing names. Controls include `none`, `simple`, `numbered`, and `existing`, with GNU aliases. |
+| `-S SUFFIX`, `--suffix=SUFFIX` | Set the simple backup suffix and enable backups. |
+| `-v`, `--verbose` | Print each created link. |
+| `-d`, `-F`, `--directory` | Allow the native hard-link operation to attempt a directory link, subject to platform permissions and filesystem support. |
+
+`VERSION_CONTROL` selects the default backup policy when backups are requested.
+`SIMPLE_BACKUP_SUFFIX` defaults to `~`. Replacement links are prepared in a
+temporary directory beside the destination. Numbered backups use an atomic no-replace rename and retry with the next
+number on collision. If installation fails after a backup is made, gutil
+restores it with an atomic no-replace rename. A concurrently created
+destination is preserved and the retained backup path is reported on conflict.
+Force mode protects hard-link names created earlier in the same invocation,
+except when numbered backups are explicitly selected.
+
+On Windows, a symbolic-link privilege failure asks the user to enable
+Developer Mode in Windows Settings and retry. Existing directory targets use
+directory symlinks. Missing targets use file symlinks. Windows requires the
+link type to be selected at creation time. Changing between file and
+directory links uses a prepared replacement and a rollback copy of the old
+name. A failed rollback retains that copy and reports its path. [Microsoft symbolic-link API](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createsymboliclinkw)
+
+### rmdir
+
+`gutil rmdir DIRECTORY...` removes empty directories. `-p`, `--parents` also
+attempts each ancestor, stopping on the first failure. `--ignore-fail-on-non-empty`
+ignores nonempty-directory errors. Other errors retain a failing exit status.
+`-v`, `--verbose` reports each attempted removal. Verbose records use gutil's
+command label and escaped path names.
+
+### truncate
+
+`gutil truncate --size=SIZE FILE...` creates missing files and shrinks or
+extends existing files. Extension preserves the existing prefix and makes
+the added range read as zero bytes. `-c`, `--no-create` skips missing files.
+
+| Option | Behavior |
+| --- | --- |
+| `-s SIZE`, `--size=SIZE` | Set the size, or apply a modifier below. |
+| `-r FILE`, `--reference=FILE` | Use the reference file's size as the base. Combining a reference with a size requires a relative modifier. |
+| `-o`, `--io-blocks` | Express the amount in the target filesystem's reported I/O block size on Unix or allocation cluster size on Windows. |
+
+A size accepts binary prefixes such as `K` or `MiB`, and decimal prefixes
+such as `KB` or `MB`. Modifiers `+` and `-` extend and reduce the base size,
+`<` and `>` impose a maximum or minimum, `/` rounds down to a multiple, and
+`%` rounds up. Reductions stop at zero. Invalid sizes and division by zero
+are rejected before processing files. Arithmetic overflow is reported for
+the affected operand. Unix file operands are opened nonblockingly, so a FIFO
+error does not prevent later operands from being processed.
+
+```sh
+gutil ln --symbolic --relative source.txt links/source.txt
+gutil ln --backup=numbered --force source.txt destination.txt
+gutil rmdir --parents empty/tree/leaf
+gutil truncate --size=64KiB data.bin
+gutil truncate --size=+1MiB first.bin second.bin
+gutil truncate --reference=template.bin copy.bin
+```
