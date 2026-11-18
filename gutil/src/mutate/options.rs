@@ -106,7 +106,7 @@ impl Builder {
             }
             (Command::Ln, b"--suffix") => {
                 self.links.suffix = Some(value("--suffix", attached, args)?);
-                self.enable_backup();
+                self.enable_backup()?;
                 Ok(())
             }
             (Command::Ln, b"--backup") => {
@@ -185,7 +185,7 @@ impl Builder {
                 Value::Directory => self.links.target_directory = Some(input.into()),
                 Value::Suffix => {
                     self.links.suffix = Some(input);
-                    self.enable_backup();
+                    self.enable_backup()?;
                 }
             }
             return Ok(());
@@ -193,8 +193,11 @@ impl Builder {
         Ok(())
     }
 
-    fn enable_backup(&mut self) {
-        self.links.backup.get_or_insert(links::Backup::Existing);
+    fn enable_backup(&mut self) -> Result<(), Error> {
+        if self.links.backup.is_none() {
+            self.links.backup = Some(backup(None)?);
+        }
+        Ok(())
     }
 
     fn finish(self, mut paths: Vec<PathBuf>) -> Result<Request, Error> {
@@ -233,6 +236,10 @@ impl Builder {
                 {
                     return Err(Error::AbsoluteReference);
                 }
+                #[cfg(not(unix))]
+                if self.truncate.io_blocks {
+                    return Err(Error::UnsupportedBlocks);
+                }
                 Work::Truncate(self.truncate, paths)
             }
         };
@@ -242,6 +249,7 @@ impl Builder {
 
 fn backup(value: Option<OsString>) -> Result<links::Backup, Error> {
     let value = value
+        .filter(|value| !value.is_empty())
         .or_else(|| std::env::var_os("VERSION_CONTROL"))
         .unwrap_or_else(|| "existing".into());
     links::Backup::parse(&value).ok_or(Error::Backup(value))

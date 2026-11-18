@@ -518,3 +518,52 @@ fn long_symbolic_options_preserve_missing_targets_and_logical_identity() {
         Path::new("missing/target")
     );
 }
+
+#[test]
+fn resolves_empty_backup_controls_and_suffix_policies_from_the_environment() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    std::fs::write(root.join("source"), b"new").unwrap();
+    for (target, flag) in [("first", "--backup="), ("second", "--suffix=.save")] {
+        std::fs::write(root.join(target), b"old").unwrap();
+        let output = command(root, "ln", &[flag, "source", target])
+            .env("VERSION_CONTROL", "numbered")
+            .output()
+            .unwrap();
+        success(&output);
+        assert_eq!(
+            std::fs::read(root.join(format!("{target}.~1~"))).unwrap(),
+            b"old"
+        );
+    }
+    std::fs::write(root.join("protected"), b"keep").unwrap();
+    let failure = command(root, "ln", &["-S.save", "source", "protected"])
+        .env("VERSION_CONTROL", "invalid")
+        .output()
+        .unwrap();
+    assert_eq!(failure.status.code(), Some(1));
+    assert_eq!(std::fs::read(root.join("protected")).unwrap(), b"keep");
+    assert_eq!(
+        run(
+            root,
+            "ln",
+            &["--backup=off", "-S.save", "source", "protected"]
+        )
+        .status
+        .code(),
+        Some(1)
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn rejects_unavailable_io_block_units_before_creating_a_file() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output = run(
+        fixture.path(),
+        "truncate",
+        &["--io-blocks", "--size=1", "missing"],
+    );
+    assert_eq!(output.status.code(), Some(1));
+    assert!(!fixture.path().join("missing").exists());
+}

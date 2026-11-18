@@ -77,6 +77,9 @@ enum Error {
     AbsoluteReference,
     #[error("--io-blocks requires --size")]
     MissingBlockSize,
+    #[cfg(not(unix))]
+    #[error("--io-blocks is unavailable on this platform")]
+    UnsupportedBlocks,
     #[error("invalid backup control {0:?}")]
     Backup(OsString),
     #[error(transparent)]
