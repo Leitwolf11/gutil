@@ -131,7 +131,9 @@ pub(super) fn move_no_replace(source: &Path, destination: &Path) -> io::Result<(
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing file name"))?;
         Ok(fs::canonicalize(super::parent(path))?.join(name))
     };
-    renamore::rename_exclusive(entry(source)?, entry(destination)?)
+    let source = entry(source)?;
+    let destination = entry(destination)?;
+    atomicwrites::move_atomic(&source, &destination)
 }
 
 #[cfg(not(any(target_os = "linux", target_vendor = "apple", windows)))]

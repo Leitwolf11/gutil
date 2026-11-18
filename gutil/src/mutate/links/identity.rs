@@ -75,7 +75,7 @@ fn query(path: &Path, follow: bool) -> io::Result<Info> {
         .access_mode(0)
         .custom_flags(flags)
         .open(path)?;
-    let info = winapi_util::file::information(&file)?;
+    let info = winapi_util::file::information(file)?;
     Ok(Info {
         identity: (info.volume_serial_number(), info.file_index()),
         links: info.number_of_links(),

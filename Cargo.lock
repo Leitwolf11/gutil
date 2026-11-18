@@ -90,6 +90,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "atomicwrites"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ef1bb8d1b645fe38d51dfc331d720fb5fc2c94b440c76cc79c80ff265ca33e3"
+dependencies = [
+ "rustix 0.38.44",
+ "tempfile",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -793,6 +804,7 @@ name = "gutil"
 version = "0.14.0"
 dependencies = [
  "ariadne",
+ "atomicwrites",
  "criterion",
  "data-encoding",
  "fs4",
@@ -806,7 +818,6 @@ dependencies = [
  "parking_lot 0.13.0",
  "proptest",
  "regex",
- "renamore",
  "reqwest",
  "rustc-hash",
  "rustix 1.1.6",
@@ -1829,16 +1840,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "renamore"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f5bced8a18df26d088a61a8f314d853ad18705b0aee59b43ccc088ca4bc3670"
-dependencies = [
- "cc",
- "tempfile",
-]
 
 [[package]]
 name = "reqwest"
