@@ -4,7 +4,7 @@ use std::process::Command;
 
 use tempfile::tempdir;
 
-use super::{create_fixture, git, gutil, success};
+use super::{create_fixture, git, gutil, install_command, success};
 
 fn commit(directory: &Path) -> String {
     git(directory, &["add", "."]);
@@ -68,13 +68,17 @@ fn installs_the_selected_tag_or_commit_and_never_falls_back_to_head() {
         repository,
         &["-c", "tag.gpgsign=false", "tag", "releases/v4", "v4^{}"],
     );
+    git(
+        repository,
+        &["-c", "tag.gpgsign=false", "tag", "20240101", "v4^{}"],
+    );
     update_output(repository, "head");
     git(repository, &["branch", "v4"]);
-    let url = reqwest::Url::from_directory_path(repository).unwrap();
 
     for (selector, expected) in [
         ("v4".to_owned(), Some("example\n")),
         ("releases/v4".to_owned(), Some("example\n")),
+        ("refs/tags/20240101".to_owned(), Some("example\n")),
         (pinned[..8].to_owned(), Some("pinned: example\n")),
         (pinned, Some("pinned: example\n")),
         ("missing-tag".to_owned(), None),
@@ -82,23 +86,12 @@ fn installs_the_selected_tag_or_commit_and_never_falls_back_to_head() {
     ] {
         let home = tempdir().unwrap();
         let directory = home.path();
-        let output = gutil(directory)
+        let output = install_command(directory, repository, "pinned-owner/pinned-repo")
             .args([
                 "plug-in",
                 "install",
                 &format!("github.com:pinned-owner/pinned-repo@{selector}"),
             ])
-            .env("CARGO_NET_GIT_FETCH_WITH_CLI", "true")
-            .env("CARGO_TARGET_DIR", directory.join("build"))
-            .env_remove("RUSTFLAGS")
-            .env_remove("CARGO_ENCODED_RUSTFLAGS")
-            .env_remove("RUSTC_WRAPPER")
-            .env("GIT_CONFIG_COUNT", "1")
-            .env("GIT_CONFIG_KEY_0", format!("url.{url}.insteadOf"))
-            .env(
-                "GIT_CONFIG_VALUE_0",
-                "https://github.com/pinned-owner/pinned-repo",
-            )
             .output()
             .unwrap();
         if let Some(expected) = expected {

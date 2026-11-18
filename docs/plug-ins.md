@@ -24,7 +24,9 @@ Without a selector, Cargo builds the GitHub repository's default branch into
 a WASI module. Add `@v4` to build the tag `v4`, or append a commit hash to
 build that revision. Hexadecimal selectors of 7 through 40 characters select
 commits, including unambiguous abbreviated hashes. Other selectors are Git
-tag names, which can include paths such as `@releases/v4`. A tag selector
+tag names, which can include paths such as `@releases/v4`. Use a fully
+qualified selector such as `@refs/tags/20240101` to select a hexadecimal tag
+without interpreting its name as a commit hash. A tag selector
 selects the tag even when a branch has the same name. A missing tag or commit
 fails installation, and gutil does not fall back to the default branch.
 Tags can be moved by repository maintainers. Use a full commit hash when

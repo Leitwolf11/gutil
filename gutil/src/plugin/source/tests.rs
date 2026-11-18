@@ -21,6 +21,8 @@ fn selects_tags_and_commits_without_changing_the_repository_url() {
     for (selector, option) in [
         ("v4", "--tag=v4"),
         ("release/v4", "--tag=release/v4"),
+        ("refs/tags/20240101", "--tag=20240101"),
+        ("refs/tags/abcdef0", "--tag=abcdef0"),
         ("-v4", "--tag=-v4"),
         ("v4@stable", "--tag=v4@stable"),
         ("v4.LOCK", "--tag=v4.LOCK"),
@@ -45,6 +47,7 @@ fn selects_tags_and_commits_without_changing_the_repository_url() {
 fn rejects_invalid_selectors_and_repository_names() {
     for source in [
         "github.com:owner/repo@",
+        "github.com:owner/repo@refs/tags/",
         "github.com:owner/repo@v4..old",
         "github.com:owner/repo@v4.lock",
         "github.com:owner/repo@release/.v4",

@@ -16,6 +16,13 @@ enum Revision {
 
 impl Revision {
     fn parse(value: &str) -> Result<Self, ParseError> {
+        if let Some(tag) = value.strip_prefix("refs/tags/") {
+            return if valid_tag(tag) {
+                Ok(Self::Tag(tag.to_owned()))
+            } else {
+                Err(ParseError::Revision)
+            };
+        }
         if (7..=40).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Ok(Self::Commit(value.to_ascii_lowercase()));
         }

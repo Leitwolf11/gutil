@@ -36,6 +36,24 @@ fn git(directory: &Path, args: &[&str]) {
     success(&output);
 }
 
+fn install_command(directory: &Path, repository: &Path, github_repository: &str) -> Command {
+    let url = reqwest::Url::from_directory_path(repository).unwrap();
+    let mut command = gutil(directory);
+    command
+        .env("CARGO_NET_GIT_FETCH_WITH_CLI", "true")
+        .env("CARGO_TARGET_DIR", directory.join("build"))
+        .env_remove("RUSTFLAGS")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env_remove("RUSTC_WRAPPER")
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", format!("url.{url}.insteadOf"))
+        .env(
+            "GIT_CONFIG_VALUE_0",
+            format!("https://github.com/{github_repository}"),
+        );
+    command
+}
+
 #[test]
 fn validates_syntax_and_reports_uninstalled_commands() {
     let home = tempdir().unwrap();
@@ -165,25 +183,13 @@ fn installs_and_launches_a_rust_plug_in() {
     let dir = home.path();
     let repo = fixture.path();
     create_fixture(repo);
-    let url = reqwest::Url::from_directory_path(repo).unwrap();
     let install = || {
-        gutil(dir)
+        install_command(dir, repo, "fixture-owner/fixture-repo")
             .args([
                 "plug-in",
                 "install",
                 "github.com:fixture-owner/fixture-repo",
             ])
-            .env("CARGO_NET_GIT_FETCH_WITH_CLI", "true")
-            .env("CARGO_TARGET_DIR", dir.join("build"))
-            .env_remove("RUSTFLAGS")
-            .env_remove("CARGO_ENCODED_RUSTFLAGS")
-            .env_remove("RUSTC_WRAPPER")
-            .env("GIT_CONFIG_COUNT", "1")
-            .env("GIT_CONFIG_KEY_0", format!("url.{url}.insteadOf"))
-            .env(
-                "GIT_CONFIG_VALUE_0",
-                "https://github.com/fixture-owner/fixture-repo",
-            )
             .output()
             .unwrap()
     };

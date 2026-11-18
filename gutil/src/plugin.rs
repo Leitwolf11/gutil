@@ -19,7 +19,7 @@ const LABEL: &str = "gutil plug-in";
 const BINARY_PREFIX: &str = "gutil-";
 const MODULE_SUFFIX: &str = ".wasm";
 const WASI_TARGET: &str = "wasm32-wasip1";
-const HELP: &str = "Usage: gutil plug-in install github.com:OWNER/REPOSITORY[@TAG|@COMMIT]\n       gutil plug-in use COMMAND [ARGUMENTS]...\n\nInstall a Rust plug-in from GitHub or run an installed plug-in.\nUse @v4 to select a tag or @<commit-hash> to select a commit.\nOmit the selector to build the repository's default branch.\nThe binary target must be named gutil-<command> and compile for wasm32-wasip1.\n";
+const HELP: &str = "Usage: gutil plug-in install github.com:OWNER/REPOSITORY[@TAG|@COMMIT]\n       gutil plug-in use COMMAND [ARGUMENTS]...\n\nInstall a Rust plug-in from GitHub or run an installed plug-in.\nUse @v4 to select a tag or @<commit-hash> to select a commit.\nUse @refs/tags/NAME for an explicit tag selector.\nOmit the selector to build the repository's default branch.\nThe binary target must be named gutil-<command> and compile for wasm32-wasip1.\n";
 
 enum Request {
     Help,
