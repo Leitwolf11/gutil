@@ -236,10 +236,6 @@ impl Builder {
                 {
                     return Err(Error::AbsoluteReference);
                 }
-                #[cfg(not(unix))]
-                if self.truncate.io_blocks {
-                    return Err(Error::UnsupportedBlocks);
-                }
                 Work::Truncate(self.truncate, paths)
             }
         };

@@ -146,7 +146,7 @@ impl Options {
             let metadata = file.metadata()?;
             (
                 reference.unwrap_or(metadata.len()),
-                io_block_size(&metadata)?,
+                io_block_size(&metadata, path)?,
             )
         } else if reference.is_none() && self.size.is_some_and(Size::relative) {
             (file.metadata()?.len(), 1)
@@ -161,7 +161,7 @@ impl Options {
 }
 
 #[cfg(unix)]
-fn io_block_size(metadata: &Metadata) -> io::Result<u64> {
+fn io_block_size(metadata: &Metadata, _path: &std::path::Path) -> io::Result<u64> {
     use std::os::unix::fs::MetadataExt;
     let block = metadata.blksize();
     if block == 0 {
@@ -173,8 +173,21 @@ fn io_block_size(metadata: &Metadata) -> io::Result<u64> {
     Ok(block)
 }
 
-#[cfg(not(unix))]
-fn io_block_size(_metadata: &Metadata) -> io::Result<u64> {
+#[cfg(windows)]
+fn io_block_size(_metadata: &Metadata, path: &std::path::Path) -> io::Result<u64> {
+    let resolved = std::fs::canonicalize(path)?;
+    let block = fs4::allocation_granularity(resolved)?;
+    if block == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "filesystem reports zero allocation granularity",
+        ));
+    }
+    Ok(block)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn io_block_size(_metadata: &Metadata, _path: &std::path::Path) -> io::Result<u64> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "I/O block sizing is unavailable on this platform",

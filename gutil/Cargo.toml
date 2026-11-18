@@ -44,6 +44,9 @@ rustix = { version = "1.1", features = ["fs"] }
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 sysinfo = { version = "0.40.4", default-features = false, features = ["disk"] }
 
+[target.'cfg(windows)'.dependencies]
+fs4 = { version = "1.1", default-features = false }
+
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false }
 insta = "1"

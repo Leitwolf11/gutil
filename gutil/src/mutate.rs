@@ -34,7 +34,7 @@ impl Command {
             Self::Link => "FILE1 FILE2\n\nCreate a hard link named FILE2 to FILE1.",
             Self::Unlink => "FILE\n\nRemove one file name.",
             Self::Rmdir => "[OPTIONS] DIRECTORY...\n\nRemove empty directories.\n\n  -p, --parents  Remove each directory and its ancestors\n  -v, --verbose  Report every attempted removal\n      --ignore-fail-on-non-empty  Ignore nonempty directories",
-            Self::Truncate => "[OPTIONS] FILE...\n\nShrink or extend files.\n\n  -s, --size=SIZE       Set or adjust size\n  -r, --reference=FILE  Use the reference size\n  -c, --no-create       Skip missing files\n  -o, --io-blocks       Express SIZE in filesystem I/O blocks on Unix\n\nSIZE accepts binary or decimal units and +, -, <, >, /, % modifiers.",
+            Self::Truncate => "[OPTIONS] FILE...\n\nShrink or extend files.\n\n  -s, --size=SIZE       Set or adjust size\n  -r, --reference=FILE  Use the reference size\n  -c, --no-create       Skip missing files\n  -o, --io-blocks       Express SIZE in filesystem I/O blocks\n\nSIZE accepts binary or decimal units and +, -, <, >, /, % modifiers.",
         }
     }
 }
@@ -77,9 +77,6 @@ enum Error {
     AbsoluteReference,
     #[error("--io-blocks requires --size")]
     MissingBlockSize,
-    #[cfg(not(unix))]
-    #[error("--io-blocks is unavailable on this platform")]
-    UnsupportedBlocks,
     #[error("invalid backup control {0:?}")]
     Backup(OsString),
     #[error(transparent)]

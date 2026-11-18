@@ -557,13 +557,17 @@ fn resolves_empty_backup_controls_and_suffix_policies_from_the_environment() {
 
 #[cfg(windows)]
 #[test]
-fn rejects_unavailable_io_block_units_before_creating_a_file() {
+fn uses_windows_filesystem_allocation_units_for_io_block_sizes() {
     let fixture = tempfile::tempdir().unwrap();
-    let output = run(
-        fixture.path(),
+    let root = std::fs::canonicalize(fixture.path()).unwrap();
+    let block = fs4::allocation_granularity(&root).unwrap();
+    success(&run(
+        &root,
         "truncate",
-        &["--io-blocks", "--size=1", "missing"],
+        &["--io-blocks", "--size=2", "new-file"],
+    ));
+    assert_eq!(
+        std::fs::metadata(root.join("new-file")).unwrap().len(),
+        2 * block
     );
-    assert_eq!(output.status.code(), Some(1));
-    assert!(!fixture.path().join("missing").exists());
 }
