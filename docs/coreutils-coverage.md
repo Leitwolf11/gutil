@@ -5,7 +5,7 @@ standalone command names after excluding the multicall wrapper `coreutils`
 and the shared library `libstdbuf.so`. The halfway target is 54 commands.
 The baseline includes standalone aliases and platform-dependent commands.
 gutil's `cache` and `plug-in` commands are outside this total.
-The commands implemented below account for 24 of the 54 target names.
+The commands implemented below account for 26 of the 54 target names.
 [GNU Coreutils 9.12 program list](https://github.com/coreutils/coreutils/blob/v9.12/build-aux/gen-lists-of-programs.sh)
 
 | Group | Commands | Status |
@@ -18,7 +18,8 @@ The commands implemented below account for 24 of the 54 target names.
 | Filesystem capacity | `df` | Implemented and benchmarked against GNU. |
 | Files and directories | `cp`, `du`, `link`, `ln`, `mkdir`, `mktemp`, `mv`, `rm`, `rmdir`, `stat`, `touch`, `truncate`, `unlink` | Planned. |
 | Shell and system utilities | `echo`, `false`, `nproc`, `printenv`, `sleep`, `true`, `yes` | Implemented and benchmarked against GNU. |
-| Additional encoding and shell utilities | `base32`, `base64`, `env`, `printf`, `seq` | Planned. |
+| Base encoding | `base32`, `base64` | Implemented and benchmarked against GNU for encoding and wrapped decoding. |
+| Additional shell utilities | `env`, `printf`, `seq` | Planned. |
 
 The command-line reference documents supported behavior and intentional
 differences. The benchmark reports identify the machine and workload for each

@@ -406,3 +406,29 @@ gutil df --output=source,size,target --total .
 gutil duf --only local --sort size
 gutil duf --json .
 ```
+
+## Base32 and Base64
+
+`gutil base32` and `gutil base64` encode bytes using the RFC 4648 alphabets.
+Each command reads one file operand, or stdin when the operand is omitted
+or `-`. Encoding wraps at 76 columns by default and terminates nonempty
+wrapped output with a newline. Unwrapped encoding adds no newline.
+
+| Option | Behavior |
+| --- | --- |
+| `-d`, `--decode` | Decode the selected alphabet. Line feeds are accepted. |
+| `-i`, `--ignore-garbage` | Skip bytes outside the selected alphabet while decoding. |
+| `-w N`, `--wrap=N` | Wrap encoded output at N columns. Zero disables wrapping. |
+| `-j N`, `--jobs=N`, `--threads=N` | Select the shared runtime worker count. A stream is processed in input order. |
+| `--help`, `--version` | Print command-specific help or version. |
+
+Malformed encoded input exits with status 1 and can emit the successfully
+decoded prefix, following the supported GNU behavior. Canonical unpadded
+tails and concatenated padded groups are accepted. Progress uses stderr
+and respects the global `--progress=auto|never|always` setting.
+
+```sh
+gutil base64 -w0 file.bin
+gutil base64 --decode encoded.txt
+gutil base32 --wrap=32 file.bin
+```
