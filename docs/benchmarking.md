@@ -131,3 +131,13 @@ TMPDIR=/tmp GNU_COREUTILS_DIR=/usr/bin cargo bench --locked -p gutil --bench enc
 The harness compares wrapped encoding, unwrapped encoding, and wrapped
 decoding over an 8 MiB binary fixture. It checks output against GNU before
 timing each pair and includes process startup in the measured time.
+
+Run the generated encoding parity suite with GNU Coreutils 9.12 binaries.
+The test uses a deterministic proptest generator and compares stdout and
+exit status for 294 encoding and decoding cases, including malformed data.
+It requires an explicit opt-in because the GNU version is part of the
+compatibility baseline.
+
+```sh
+GNU_COREUTILS_DIR=/usr/bin cargo test --locked -p gutil --test encoding generated_cases_match_gnu_encoding_and_decoding -- --ignored
+```

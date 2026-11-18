@@ -4,6 +4,9 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
+#[path = "encoding/gnu_parity.rs"]
+mod gnu_parity;
+
 fn command(root: &Path, args: &[&str]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_gutil"));
     command
@@ -15,7 +18,11 @@ fn command(root: &Path, args: &[&str]) -> Command {
 }
 
 fn convert(root: &Path, args: &[&str], input: &[u8]) -> Output {
-    let mut child = command(root, args)
+    capture(command(root, args), input)
+}
+
+fn capture(mut command: Command, input: &[u8]) -> Output {
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

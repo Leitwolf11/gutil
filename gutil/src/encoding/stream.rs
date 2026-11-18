@@ -289,3 +289,63 @@ fn read_some(input: &mut impl Read, bytes: &mut [u8]) -> io::Result<usize> {
 fn invalid_input() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, "invalid input")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{decode, encode, Base, Wrap};
+    use std::io::{self, Read};
+
+    struct Fragmented<'a> {
+        bytes: &'a [u8],
+        interrupted: bool,
+    }
+
+    impl Read for Fragmented<'_> {
+        fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+            if !self.interrupted {
+                self.interrupted = true;
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            self.bytes.read(&mut output[..1])
+        }
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn retries_interrupted_reads_and_carries_single_byte_fragments() {
+        for (base, expected) in [
+            (Base::Base32, b"MZXW6YTBOI======".as_slice()),
+            (Base::Base64, b"Zm9vYmFy".as_slice()),
+        ] {
+            let mut input = Fragmented {
+                bytes: b"foobar",
+                interrupted: false,
+            };
+            let mut encoded = Vec::new();
+            encode(base, Wrap::new(0), &mut input, &mut encoded, &mut |_| {}).unwrap();
+            assert_eq!(encoded, expected);
+            let mut input = Fragmented {
+                bytes: &encoded,
+                interrupted: false,
+            };
+            let mut decoded = Vec::new();
+            decode(base, false, &mut input, &mut decoded, &mut |_| {}).unwrap();
+            assert_eq!(decoded, b"foobar");
+        }
+    }
+
+    #[test]
+    fn alphabet_tables_reject_every_non_alphabet_byte() {
+        for alphabet in [super::A32.as_slice(), super::A64.as_slice()] {
+            let table = super::lookup(alphabet);
+            for byte in 0u8..=255 {
+                let index = table[usize::from(byte)];
+                if index == u8::MAX {
+                    assert!(!alphabet.contains(&byte));
+                } else {
+                    assert_eq!(alphabet[usize::from(index)], byte);
+                }
+            }
+        }
+    }
+}

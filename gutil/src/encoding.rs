@@ -157,7 +157,7 @@ pub(crate) fn run(
     let options = match Options::parse(args, workers) {
         Ok(Request::Help) => return writeln!(
             io::stdout(),
-            "Usage: {} [OPTIONS] [FILE]\n\nEncode or decode FILE, or read standard input for '-' or no FILE.\n\n  -d, --decode           Decode input\n  -i, --ignore-garbage   Skip nonalphabet bytes while decoding\n  -w, --wrap=COLS        Wrap at COLS columns, default 76, or use 0 for no wrapping\n  -j, --jobs=N          Set the filesystem worker limit\n      --help            Print help\n      --version         Print version",
+            "Usage: {} [OPTIONS] [FILE]\n\nEncode or decode FILE, or read standard input for '-' or no FILE.\n\n  -d, --decode           Decode input\n  -i, --ignore-garbage   Skip nonalphabet bytes while decoding\n  -w, --wrap=COLS        Wrap at COLS columns, default 76, or use 0 for no wrapping\n  -j, --jobs=N          Set the runtime worker limit\n      --help            Print help\n      --version         Print version",
             base.label()
         ).map(|()| 0),
         Ok(Request::Version) => return writeln!(io::stdout(), "{} {}", base.label(), env!("CARGO_PKG_VERSION")).map(|()| 0),
