@@ -783,6 +783,7 @@ name = "gutil"
 version = "0.13.0"
 dependencies = [
  "ariadne",
+ "aws-lc-rs",
  "criterion",
  "data-encoding",
  "globset",
