@@ -8,7 +8,7 @@ fn quiet_suppresses_creation_errors_but_keeps_failure_status() {
     assert_eq!(noisy.status.code(), Some(1));
     assert_ne!(noisy.stderr.as_slice(), b"");
     let quiet = invocation(root)
-        .args(["-q", "missing/nameXXX"])
+        .args(["--quiet", "missing/nameXXX"])
         .output()
         .unwrap();
     assert_eq!(quiet.status.code(), Some(1));

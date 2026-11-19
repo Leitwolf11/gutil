@@ -49,6 +49,20 @@ fn defaults_use_tmpdir_and_keep_the_created_file_after_exit() {
 }
 
 #[test]
+fn default_directory_fallback_works_without_tmpdir() {
+    let fixture = tempfile::tempdir().unwrap();
+    let output = invocation(fixture.path()).output().unwrap();
+    let created = path(&output);
+    assert!(created.is_absolute());
+    assert_name(&created, "tmp.", "", 10);
+    #[cfg(unix)]
+    assert_eq!(created.parent(), Some(Path::new("/tmp")));
+    assert!(created.is_file());
+    assert_eq!(fs::metadata(&created).unwrap().len(), 0);
+    fs::remove_file(created).unwrap();
+}
+
+#[test]
 fn preserves_template_structure_inferred_and_explicit_suffixes() {
     let fixture = tempfile::tempdir().unwrap();
     let root = fixture.path();
@@ -74,7 +88,7 @@ fn creates_only_the_final_component_and_accepts_absolute_templates() {
     let root = fixture.path();
     fs::create_dir(root.join("parent")).unwrap();
     let output = invocation(root)
-        .args(["-d", "parent/child.XXXXX"])
+        .args(["--directory", "parent/child.XXXXX"])
         .output()
         .unwrap();
     let created = path(&output);

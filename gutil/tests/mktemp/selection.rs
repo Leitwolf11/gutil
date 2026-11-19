@@ -48,7 +48,7 @@ fn dry_run_never_reserves_or_removes_names() {
     fs::write(root.join("preserved"), b"preserved").unwrap();
     for args in [
         vec!["-u", "name.XXXXXX"],
-        vec!["-du", "dir.XXXXXX"],
+        vec!["-duj2", "dir.XXXXXX"],
         vec!["--dry-run", "missing/name.XXX"],
     ] {
         let created = path(&invocation(root).args(&args).output().unwrap());

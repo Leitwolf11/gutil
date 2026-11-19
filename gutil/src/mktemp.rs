@@ -105,7 +105,9 @@ fn native_temp_dir() -> PathBuf {
     }
     #[cfg(windows)]
     {
-        std::env::temp_dir()
+        // This lookup only selects a base directory. Creation uses OS-random
+        // names and atomic reservation; dry runs deliberately reserve nothing.
+        std::env::temp_dir() // nosemgrep: temp-dir, rust.lang.security.temp-dir.temp-dir
     }
 }
 

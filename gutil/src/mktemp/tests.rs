@@ -126,6 +126,28 @@ fn close_failures_do_not_retry_or_delete_the_reserved_file() {
     assert!(path.is_file());
 }
 
+#[test]
+fn invalid_parent_errors_stop_without_retrying_or_changing_the_parent() {
+    let fixture = tempfile::tempdir().unwrap();
+    let parent = fixture.path().join("blocked");
+    fs::write(&parent, b"preserved").unwrap();
+    for action in [Action::File, Action::Directory, Action::NameOnly] {
+        let mut attempts = 0;
+        let result = reserve(
+            action,
+            3,
+            || {
+                attempts += 1;
+                Ok(parent.join("child"))
+            },
+            close,
+        );
+        assert!(result.is_err());
+        assert_eq!(attempts, 1);
+        assert_eq!(fs::read(&parent).unwrap(), b"preserved");
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn dangling_symlinks_are_collisions_even_for_unreserved_names() {
