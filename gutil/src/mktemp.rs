@@ -126,8 +126,13 @@ fn reserve(
                 Ok(_) => Err(io::Error::from(io::ErrorKind::AlreadyExists)),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
                     #[cfg(windows)]
-                    native::validate_missing_parent(&path)?;
-                    Ok(None)
+                    {
+                        native::validate_missing_parent(&path).map(|()| None)
+                    }
+                    #[cfg(unix)]
+                    {
+                        Ok(None)
+                    }
                 }
                 Err(error) => Err(error),
             },
@@ -185,6 +190,8 @@ fn create_directory(path: &std::path::Path) -> io::Result<()> {
 fn close(file: File) -> io::Result<()> {
     #[cfg(unix)]
     {
+        // Nix 0.32 consumes IntoRawFd, transferring ownership from File.
+        // File's destructor cannot close the descriptor a second time.
         nix::unistd::close(file).map_err(io::Error::from)
     }
     #[cfg(windows)]

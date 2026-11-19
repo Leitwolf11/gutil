@@ -50,6 +50,7 @@ fn dry_run_never_reserves_or_removes_names() {
         vec!["-u", "name.XXXXXX"],
         vec!["-duj2", "dir.XXXXXX"],
         vec!["--dry-run", "missing/name.XXX"],
+        vec!["-u", "--tmpdir=.", "name.XXXXXX"],
     ] {
         let created = path(&invocation(root).args(&args).output().unwrap());
         assert!(!root.join(created).exists());

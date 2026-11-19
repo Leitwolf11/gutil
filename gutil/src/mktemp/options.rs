@@ -50,7 +50,7 @@ pub(super) enum Error {
     Suffix,
     #[error("--tmpdir requires a relative template")]
     Absolute,
-    #[error("-t requires a template without directory separators")]
+    #[error("-t requires a single filename component without a drive prefix")]
     Legacy,
     #[error(transparent)]
     Workers(#[from] jobs::InvalidCount),
@@ -177,17 +177,12 @@ impl Parser {
         let default = self.template.is_none();
         let value = self.template.unwrap_or_else(|| "tmp.XXXXXXXXXX".into());
         let location = if self.legacy {
-            if template::has_separator(&value) {
+            if template::has_separator(&value) || !directory_relative(&value) {
                 return Err(Error::Legacy);
             }
             Location::Legacy(self.root.directory())
         } else if !matches!(self.root, Root::AsWritten) || default {
-            let path = PathBuf::from(&value);
-            if path.has_root()
-                || path
-                    .components()
-                    .any(|component| matches!(component, std::path::Component::Prefix(_)))
-            {
+            if !directory_relative(&value) {
                 return Err(Error::Absolute);
             }
             Location::Temporary(self.root.directory())
@@ -209,4 +204,12 @@ impl Parser {
             workers: self.workers,
         })
     }
+}
+
+fn directory_relative(value: &std::ffi::OsStr) -> bool {
+    let path = std::path::Path::new(value);
+    !path.has_root()
+        && !path
+            .components()
+            .any(|component| matches!(component, std::path::Component::Prefix(_)))
 }

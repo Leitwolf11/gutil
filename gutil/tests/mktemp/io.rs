@@ -17,7 +17,7 @@ fn quiet_suppresses_creation_errors_but_keeps_failure_status() {
 }
 
 #[test]
-fn progress_and_output_failures_do_not_delete_created_files() {
+fn rich_progress_is_separate_from_the_created_name() {
     let fixture = tempfile::tempdir().unwrap();
     let root = fixture.path();
     let output = Command::new(env!("CARGO_BIN_EXE_gutil"))
@@ -33,6 +33,12 @@ fn progress_and_output_failures_do_not_delete_created_files() {
         .unwrap();
     assert!(root.join(path(&output)).is_file());
     assert!(String::from_utf8_lossy(&output.stderr).contains("names"));
+}
+
+#[test]
+fn closed_output_keeps_the_reserved_file_and_reports_failure() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
     let (reader, writer) = std::io::pipe().unwrap();
     drop(reader);
     let output = invocation(root)
@@ -41,5 +47,10 @@ fn progress_and_output_failures_do_not_delete_created_files() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
-    assert_eq!(fs::read_dir(root).unwrap().count(), 2);
+    let entries: Vec<_> = fs::read_dir(root).unwrap().map(Result::unwrap).collect();
+    assert_eq!(entries.len(), 1);
+    let entry = &entries[0];
+    assert!(entry.file_name().to_string_lossy().starts_with("closed."));
+    assert!(entry.file_type().unwrap().is_file());
+    assert_eq!(entry.metadata().unwrap().len(), 0);
 }

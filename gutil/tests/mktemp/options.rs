@@ -20,6 +20,22 @@ fn temporary_roots_reject_drive_relative_rooted_and_unc_templates() {
     }
 }
 
+#[cfg(windows)]
+#[test]
+fn legacy_roots_also_reject_drive_prefixed_templates() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    for flags in [vec!["-t"], vec!["-t", "--tmpdir"], vec!["-t", "-p", "."]] {
+        let output = invocation(root)
+            .args(&flags)
+            .arg(r"C:tempXXX")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{flags:?}: {output:?}");
+        assert_eq!(fs::read_dir(root).unwrap().count(), 0);
+    }
+}
+
 #[test]
 fn rejects_invalid_requests_before_creating_anything() {
     let fixture = tempfile::tempdir().unwrap();
