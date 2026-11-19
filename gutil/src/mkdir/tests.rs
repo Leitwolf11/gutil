@@ -147,7 +147,10 @@ fn restores_umask_after_successful_and_failed_creation() {
     // umask is process-global: keep this regression isolated from other tests.
     const CHILD: &str = "GUTIL_MKDIR_UMASK_CHILD";
     if std::env::var_os(CHILD).is_none() {
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
+        // Respawn the unprivileged Cargo test harness; no security decision
+        // or production executable lookup depends on this test-only path.
+        let executable = std::env::current_exe().unwrap(); // nosemgrep: current-exe, rust.lang.security.current-exe.current-exe
+        let output = std::process::Command::new(executable)
             .args([
                 "--exact",
                 "mkdir::tests::restores_umask_after_successful_and_failed_creation",
