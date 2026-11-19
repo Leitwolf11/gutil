@@ -15,7 +15,7 @@ jobs:
   rust:
     name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: ${{ matrix.os == 'macos-26-intel' && 45 || 25 }}
     permissions:
       contents: read
     strategy:
