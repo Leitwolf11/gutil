@@ -545,6 +545,11 @@ output failures are diagnosed while remaining outputs continue.
 | `--output-error=exit` | Stop at the first output failure. |
 | `--output-error=exit-nopipe` | Ignore broken pipes and stop at the first other output failure. |
 
+Output files and owned copies of stdout file/pipe handles are closed explicitly;
+close-time failures follow the same error policy as write failures. Windows
+console output uses the standard console writer to preserve Unicode handling.
+Closing an output does not request an additional `fsync` durability guarantee.
+
 Diagnosed I/O failures return status 1; invalid options return status 2.
 An optional output-error mode must follow `=`; `--output-error warn` writes
 to a file named `warn`. If no live outputs remain, copying stops without

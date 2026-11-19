@@ -338,16 +338,38 @@ fn progress_stays_on_stderr_and_help_works_with_an_invalid_config() {
 
 #[cfg(unix)]
 #[test]
-fn accepts_non_utf8_paths_and_preserves_stdout_partial_lines() {
-    use std::io::Read;
+fn native_path_handling_respects_filesystem_encoding_rules() {
     use std::os::unix::ffi::OsStrExt;
     let fixture = tempfile::tempdir().unwrap();
     let root = fixture.path();
     let name = std::ffi::OsStr::from_bytes(b"non-utf8-\xff");
+    let probe = fs::write(root.join(name), b"probe");
     let mut invocation = command(root, &[]);
-    invocation.arg(name);
-    success(&capture(invocation, b"native path"));
-    assert_eq!(fs::read(root.join(name)).unwrap(), b"native path");
+    invocation.arg(name).arg("valid");
+    let output = capture(invocation, b"native path");
+    match probe {
+        Ok(()) => {
+            success(&output);
+            assert_eq!(fs::read(root.join(name)).unwrap(), b"native path");
+        }
+        Err(error) => {
+            // APFS rejects invalid UTF-8 names. Verify the OS failure is reported
+            // while an independent valid destination still receives the stream.
+            assert_eq!(output.status.code(), Some(1));
+            let diagnostic = String::from_utf8_lossy(&output.stderr);
+            assert!(diagnostic.contains("non-utf8-"));
+            assert!(diagnostic.contains(&error.to_string()));
+        }
+    }
+    assert_eq!(output.stdout, b"native path");
+    assert_eq!(fs::read(root.join("valid")).unwrap(), b"native path");
+}
+
+#[test]
+fn forwards_partial_lines_before_input_eof() {
+    use std::io::Read;
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
     let mut child = command(root, &[])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
