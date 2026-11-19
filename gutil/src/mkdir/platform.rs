@@ -36,7 +36,12 @@ impl Mask {
         self.original
     }
 
-    pub(super) fn create(&mut self, path: &Path, permissions: u32, mask: u32) -> io::Result<()> {
+    pub(super) fn create(
+        &mut self,
+        entry: &Entry<'_>,
+        permissions: u32,
+        mask: u32,
+    ) -> io::Result<()> {
         // The command has one ordered filesystem worker, and every user-file
         // creation goes through it. Keep the selected mask until the next
         // change, avoiding two extra syscalls for each ordinary directory.
@@ -46,16 +51,7 @@ impl Mask {
             umask(native_mode(mask));
             self.current = mask;
         }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            fs::DirBuilder::new().mode(permissions).create(path)
-        }
-        #[cfg(windows)]
-        {
-            let _ = permissions;
-            fs::create_dir(path)
-        }
+        entry.create(permissions)
     }
 }
 
@@ -77,27 +73,122 @@ fn native_mode(bits: u32) -> Mode {
     Mode::from_bits_truncate((bits & 0o7777) as _)
 }
 
+// Keep the parent directory open from creation through permission adjustment.
+// A renamed or replaced ancestor cannot redirect a later chmod to another tree.
 #[cfg(unix)]
-pub(super) fn permissions(path: &Path) -> io::Result<u32> {
-    use std::os::unix::fs::PermissionsExt;
-    let metadata = fs::symlink_metadata(path)?;
-    if !metadata.is_dir() {
-        return Err(io::Error::other("created directory was replaced"));
-    }
-    Ok(metadata.permissions().mode() & 0o7777)
+pub(super) struct Entry<'a> {
+    parent: Option<std::os::fd::OwnedFd>,
+    name: &'a std::ffi::OsStr,
 }
 
 #[cfg(unix)]
-pub(super) fn set_permissions(path: &Path, permissions: u32) -> io::Result<()> {
-    use nix::fcntl::AT_FDCWD;
-    use nix::sys::stat::{fchmodat, FchmodatFlags};
-    fchmodat(
-        AT_FDCWD,
-        path,
-        native_mode(permissions),
-        FchmodatFlags::NoFollowSymlink,
-    )
-    .map_err(io::Error::from)
+impl<'a> Entry<'a> {
+    pub(super) fn new(path: &'a Path) -> io::Result<Self> {
+        use nix::fcntl::{openat, OFlag, AT_FDCWD};
+        use std::os::unix::ffi::OsStrExt;
+        let bytes = path.as_os_str().as_bytes();
+        let end = bytes
+            .iter()
+            .rposition(|byte| *byte != b'/')
+            .map_or(0, |index| index + 1);
+        let trimmed = &bytes[..end];
+        let (parent, name) = if !bytes.is_empty() && trimmed.is_empty() {
+            (Some(path.as_os_str()), std::ffi::OsStr::new("."))
+        } else if let Some(index) = trimmed.iter().rposition(|byte| *byte == b'/') {
+            (
+                Some(std::ffi::OsStr::from_bytes(&trimmed[..=index])),
+                std::ffi::OsStr::from_bytes(&trimmed[index + 1..]),
+            )
+        } else {
+            (None, std::ffi::OsStr::from_bytes(trimmed))
+        };
+        #[cfg(target_os = "linux")]
+        let access = OFlag::O_PATH;
+        #[cfg(target_vendor = "apple")]
+        let access = OFlag::O_SEARCH;
+        #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
+        let access = OFlag::O_RDONLY;
+        let parent = parent
+            .map(|path| {
+                openat(
+                    AT_FDCWD,
+                    path,
+                    access | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC,
+                    Mode::empty(),
+                )
+            })
+            .transpose()?;
+        Ok(Self { parent, name })
+    }
+
+    fn parent(&self) -> std::os::fd::BorrowedFd<'_> {
+        use std::os::fd::AsFd;
+        self.parent
+            .as_ref()
+            .map_or(nix::fcntl::AT_FDCWD, AsFd::as_fd)
+    }
+
+    pub(super) fn create(&self, permissions: u32) -> io::Result<()> {
+        nix::sys::stat::mkdirat(self.parent(), self.name, native_mode(permissions))
+            .map_err(io::Error::from)
+    }
+
+    pub(super) fn is_dir(&self) -> bool {
+        self.metadata(nix::fcntl::AtFlags::empty())
+            .is_ok_and(|metadata| {
+                nix::sys::stat::SFlag::from_bits_truncate(metadata.st_mode)
+                    == nix::sys::stat::SFlag::S_IFDIR
+            })
+    }
+
+    fn metadata(&self, flags: nix::fcntl::AtFlags) -> io::Result<nix::sys::stat::FileStat> {
+        nix::sys::stat::fstatat(self.parent(), self.name, flags).map_err(io::Error::from)
+    }
+
+    #[allow(
+        clippy::unnecessary_cast,
+        clippy::cast_lossless,
+        reason = "mode_t is u32 on Linux and u16 on macOS."
+    )]
+    pub(super) fn permissions(&self) -> io::Result<u32> {
+        let metadata = self.metadata(nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)?;
+        if nix::sys::stat::SFlag::from_bits_truncate(metadata.st_mode)
+            != nix::sys::stat::SFlag::S_IFDIR
+        {
+            return Err(io::Error::other("created directory was replaced"));
+        }
+        Ok(metadata.st_mode as u32 & 0o7777)
+    }
+
+    pub(super) fn set_permissions(&self, permissions: u32) -> io::Result<()> {
+        nix::sys::stat::fchmodat(
+            self.parent(),
+            self.name,
+            native_mode(permissions),
+            nix::sys::stat::FchmodatFlags::NoFollowSymlink,
+        )
+        .map_err(io::Error::from)
+    }
+}
+
+#[cfg(windows)]
+pub(super) struct Entry<'a>(&'a Path);
+
+#[cfg(windows)]
+impl<'a> Entry<'a> {
+    #[allow(
+        clippy::unnecessary_wraps,
+        reason = "Opening a parent directory can fail on Unix."
+    )]
+    pub(super) fn new(path: &'a Path) -> io::Result<Self> {
+        Ok(Self(path))
+    }
+    fn create(&self, _permissions: u32) -> io::Result<()> {
+        fs::create_dir(self.0)
+    }
+    pub(super) fn is_dir(&self) -> bool {
+        self.0.is_dir()
+    }
 }
 
 #[allow(

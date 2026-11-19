@@ -136,7 +136,7 @@ impl<W: Write, E: Write> Creator<'_, W, E> {
         if self.options.parents && self.prefer_existing && path.is_dir() {
             return Ok(());
         }
-        match self.create_one(path, true) {
+        match self.create_one(path, !ends_in_dot(path)) {
             Ok(created) => {
                 self.prefer_existing = !created;
                 return Ok(());
@@ -162,6 +162,9 @@ impl<W: Write, E: Write> Creator<'_, W, E> {
         if prefix.as_os_str().is_empty() {
             return Err(path_error(path, &io::Error::from(io::ErrorKind::NotFound)));
         }
+        if trailing_dot {
+            self.create_one(path, false)?;
+        }
         Ok(())
     }
 
@@ -181,17 +184,20 @@ impl<W: Write, E: Write> Creator<'_, W, E> {
         } else {
             self.mask.original() & !0o300
         };
-        match self.mask.create(path, permissions, mask) {
+        let entry = platform::Entry::new(path).map_err(|error| path_error(path, &error))?;
+        match self.mask.create(&entry, permissions, mask) {
             Ok(()) => {}
             Err(error)
                 if self.options.parents
                     && error.kind() == io::ErrorKind::AlreadyExists
-                    && path.is_dir() =>
+                    && entry.is_dir() =>
             {
                 return Ok(false)
             }
             Err(error) => return Err(path_error(path, &error)),
         }
+        #[cfg(unix)]
+        Self::adjust(&entry, requested).map_err(|error| path_error(path, &error))?;
         if self.options.verbose {
             writeln!(
                 self.output,
@@ -202,25 +208,17 @@ impl<W: Write, E: Write> Creator<'_, W, E> {
         if let Some(progress) = &mut self.progress {
             progress.advance(1, self.errors);
         }
-        #[cfg(unix)]
-        Self::adjust(path, requested).map_err(|error| path_error(path, &error))?;
         Ok(true)
     }
 
     #[cfg(unix)]
-    fn adjust(path: &Path, requested: Option<Evaluated>) -> io::Result<()> {
+    fn adjust(entry: &platform::Entry<'_>, requested: Option<Evaluated>) -> io::Result<()> {
         if let Some(mode) = requested {
-            let normalized = path
-                .as_os_str()
-                .as_encoded_bytes()
-                .ends_with(b"/")
-                .then(|| path.components().collect::<PathBuf>());
-            let path = normalized.as_deref().unwrap_or(path);
-            let actual = platform::permissions(path)?;
+            let actual = entry.permissions()?;
             let target = mode.bits | (actual & 0o6000 & !mode.affected);
             let affected = mode.affected;
             if (actual ^ target) & affected != 0 {
-                platform::set_permissions(path, target)?;
+                entry.set_permissions(target)?;
             }
         }
         Ok(())
