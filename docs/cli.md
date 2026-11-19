@@ -526,6 +526,37 @@ gutil truncate --size=+1MiB first.bin second.bin
 gutil truncate --reference=template.bin copy.bin
 ```
 
+## tee
+
+`gutil tee [OPTIONS] [FILE]...` copies standard input to standard output and
+all named files. Existing files are overwritten unless `-a` / `--append` is
+used. A literal `-` names a file; `--` ends option parsing. Native paths are
+preserved. The stream stays ordered inside one asynchronous blocking task;
+`-j`, `--jobs`, and `--threads` set the runtime worker limit.
+
+`-i` / `--ignore-interrupts` ignores Ctrl-C interrupts. Without an output-error
+option, a broken output pipe terminates the command (SIGPIPE on Unix); other
+output failures are diagnosed while remaining outputs continue.
+
+| Option | Behavior |
+| --- | --- |
+| `-p`, `--output-error`, `--output-error=warn-nopipe` | Ignore broken pipes, diagnose other failures, and continue with remaining outputs. |
+| `--output-error=warn` | Diagnose all output failures and continue with remaining outputs. |
+| `--output-error=exit` | Stop at the first output failure. |
+| `--output-error=exit-nopipe` | Ignore broken pipes and stop at the first other output failure. |
+
+Output files and owned copies of stdout file/pipe handles are closed explicitly;
+close-time failures follow the same error policy as write failures. Windows
+console output uses the standard console writer to preserve Unicode handling.
+Closing an output does not request an additional `fsync` durability guarantee.
+
+Diagnosed I/O failures return status 1; invalid options return status 2.
+An optional output-error mode must follow `=`; `--output-error warn` writes
+to a file named `warn`. If no live outputs remain, copying stops without
+waiting for input EOF. Rich progress and diagnostics use stderr and preserve
+stdout bytes. `gutil tee --help` and `gutil tee --version` work independently
+of configuration loading.
+
 ## mkdir
 
 `gutil mkdir [OPTIONS] DIRECTORY...` creates directories in operand order.

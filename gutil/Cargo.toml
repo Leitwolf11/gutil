@@ -29,7 +29,7 @@ sha2 = { version = "0.11", default-features = false }
 smallvec = "1.15"
 tempfile = "3"
 thiserror = "2"
-tokio = { version = "1", default-features = false, features = ["rt", "net", "time"] }
+tokio = { version = "1", default-features = false, features = ["rt", "net", "time", "signal"] }
 toml = "1"
 terminal_size = "0.4"
 unicode-width = "0.2"
@@ -41,12 +41,14 @@ regex = "1"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.32", default-features = false, features = ["fs"] }
+signal-hook = { version = "0.4", default-features = false }
 rustix = { version = "1.1", features = ["fs"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 sysinfo = { version = "0.40.4", default-features = false, features = ["disk"] }
 
 [target.'cfg(windows)'.dependencies]
+io-close = "0.3.7"
 fs4 = { version = "1.1", default-features = false }
 atomicwrites = "0.4.4"
 winapi-util = "0.1"
