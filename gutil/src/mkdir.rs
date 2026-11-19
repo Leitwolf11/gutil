@@ -12,7 +12,7 @@ mod platform;
 use mode::Evaluated;
 use options::{Context, Options, Request};
 
-const HELP: &str = "Usage: gutil mkdir [OPTIONS] DIRECTORY...\n\nCreate directories in operand order.\n\n  -m, --mode=MODE  Use an octal or symbolic permission mode\n  -p, --parents    Create missing parents and accept existing directories\n  -v, --verbose    Report every created directory\n  -Z               Request the default security context\n      --context[=CTX]  Request a default or explicit security context\n  -j, --jobs, --threads N  Limit runtime workers (operands stay ordered)\n      --help       Print help\n      --version    Print version\n\nParent directories use the original umask with owner write/search access.\nExisting directories keep their permissions. Windows uses inherited ACLs.\nContext options are accepted on systems without active labeling; explicit\ncontexts emit a warning. Active SELinux/SMACK context assignment is unsupported.\n";
+const HELP: &str = "Usage: gutil mkdir [OPTIONS] DIRECTORY...\n\nCreate directories in operand order.\n\n  -m, --mode=MODE  Use an octal or symbolic permission mode\n  -p, --parents    Create missing parents and accept existing directories\n  -v, --verbose    Report every created directory\n  -Z               Request the default security context\n      --context[=CTX]  Request a default or explicit security context\n  -j, --jobs, --threads N  Limit runtime workers (operands stay ordered)\n      --help       Print help\n      --version    Print version\n\nParents unmask owner write/search access; inherited ACLs remain effective.\nExisting directories keep their permissions. Windows uses inherited ACLs.\nContext options are accepted on systems without active labeling; explicit\ncontexts emit a warning. Active SELinux/SMACK context assignment is unsupported.\n";
 
 pub(crate) fn run(
     args: impl Iterator<Item = OsString>,
@@ -26,34 +26,34 @@ pub(crate) fn run(
         }
         Ok(Request::Create(options)) => options,
         Err(error) => {
-            ui.error(&mut io::stderr(), "gutil mkdir", &error.to_string())?;
+            let _ = ui.error(&mut io::stderr(), "gutil mkdir", &error.to_string());
             return Ok(2);
         }
     };
     if !matches!(options.context, Context::Inherited) {
         if platform::active_labels()? {
-            ui.error(
+            let _ = ui.error(
                 &mut io::stderr(),
                 "gutil mkdir",
                 "SELinux/SMACK context assignment is not implemented; no directories were created",
-            )?;
+            );
             return Ok(1);
         }
         if let Context::Explicit(context) = &options.context {
-            ui.warning(
+            let _ = ui.warning(
                 &mut io::stderr(),
                 "gutil mkdir",
                 &format!("security labeling is unavailable; ignoring context {context:?}"),
-            )?;
+            );
         }
     }
     #[cfg(windows)]
     if options.mode.is_some() {
-        ui.warning(
+        let _ = ui.warning(
             &mut io::stderr(),
             "gutil mkdir",
             "POSIX permission modes are unavailable; directories use inherited Windows ACLs",
-        )?;
+        );
     }
     let mask = platform::Mask::capture();
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -62,7 +62,7 @@ pub(crate) fn run(
     runtime.block_on(async move {
         tokio::task::spawn_blocking(move || execute(&options, mask, ui))
             .await
-            .map_err(io::Error::other)?
+            .map_err(io::Error::other)
     })
 }
 
@@ -75,7 +75,7 @@ struct Creator<'a, W, E> {
     progress: Option<ProgressReport>,
 }
 
-fn execute(options: &Options, mask: platform::Mask, ui: Presentation) -> io::Result<u8> {
+fn execute(options: &Options, mask: platform::Mask, ui: Presentation) -> u8 {
     let stdout = io::stdout();
     let stderr = io::stderr();
     let mut output = BufWriter::new(stdout.lock());
@@ -95,15 +95,18 @@ fn execute(options: &Options, mask: platform::Mask, ui: Presentation) -> io::Res
     let mut failed = false;
     for path in &options.paths {
         if let Err(error) = creator.ensure(path) {
-            ui.error(creator.errors, "gutil mkdir", &error.to_string())?;
+            let _ = ui.error(creator.errors, "gutil mkdir", &error.to_string());
             failed = true;
         }
     }
     if let Some(progress) = &mut creator.progress {
         progress.finish(creator.errors);
     }
-    creator.output.flush()?;
-    Ok(u8::from(failed))
+    if let Err(error) = creator.output.flush() {
+        let _ = ui.error(creator.errors, "gutil mkdir", &error.to_string());
+        failed = true;
+    }
+    u8::from(failed)
 }
 
 impl<W: Write, E: Write> Creator<'_, W, E> {
@@ -169,13 +172,13 @@ impl<W: Write, E: Write> Creator<'_, W, E> {
         if let Some(progress) = &mut self.progress {
             progress.advance(1, self.errors);
         }
-        Self::adjust(path, requested, leaf).map_err(|error| path_error(path, &error))?;
+        Self::adjust(path, requested).map_err(|error| path_error(path, &error))?;
         Ok(true)
     }
 
-    fn adjust(path: &Path, requested: Option<Evaluated>, leaf: bool) -> io::Result<()> {
+    fn adjust(path: &Path, requested: Option<Evaluated>) -> io::Result<()> {
         #[cfg(unix)]
-        if requested.is_some() || !leaf {
+        if let Some(mode) = requested {
             let normalized = path
                 .as_os_str()
                 .as_encoded_bytes()
@@ -183,16 +186,14 @@ impl<W: Write, E: Write> Creator<'_, W, E> {
                 .then(|| path.components().collect::<PathBuf>());
             let path = normalized.as_deref().unwrap_or(path);
             let actual = platform::permissions(path)?;
-            let target = requested.map_or(actual | 0o300, |mode| {
-                mode.bits | (actual & 0o6000 & !mode.affected)
-            });
-            let affected = requested.map_or(0o300, |mode| mode.affected);
+            let target = mode.bits | (actual & 0o6000 & !mode.affected);
+            let affected = mode.affected;
             if (actual ^ target) & affected != 0 {
                 platform::set_permissions(path, target)?;
             }
         }
         #[cfg(windows)]
-        let _ = (path, requested, leaf);
+        let _ = (path, requested);
         Ok(())
     }
 }

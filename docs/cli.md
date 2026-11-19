@@ -525,3 +525,46 @@ gutil truncate --size=64KiB data.bin
 gutil truncate --size=+1MiB first.bin second.bin
 gutil truncate --reference=template.bin copy.bin
 ```
+
+## mkdir
+
+`gutil mkdir [OPTIONS] DIRECTORY...` creates directories in operand order.
+It continues independent operands after errors and returns status 1 when any
+filesystem operation fails. Invalid requests return status 2. `--` ends option
+parsing, and native paths are preserved. A single Tokio blocking task preserves
+ordering; `-j`, `--jobs`, and `--threads` set the runtime worker limit.
+
+| Option | Behavior |
+| --- | --- |
+| `-p`, `--parents` | Create missing parents and accept existing directories, including symlinks to directories. |
+| `-m MODE`, `--mode=MODE` | Set permissions of newly created operand directories; existing directories retain their modes. |
+| `-v`, `--verbose` | Report each newly created directory to stdout. |
+| `-Z`, `--context[=CTX]` | Request a security context, subject to the platform limitations below. |
+| `--help`, `--version` | Print command-specific information without loading configuration. |
+
+Unix permission modes accept octal numbers, `+`, `-`, or `=` numeric operators,
+and symbolic clauses using `u`, `g`, `o`, `a`, `r`, `w`, `x`, `X`, `s`, and `t`.
+Clauses can copy permissions, as in `u=rw,g=u,o=g`, or combine operations, as
+in `u+r-w+x`. Omitted classes in symbolic clauses use the original umask. Ordinary numeric modes
+preserve inherited directory setuid/setgid bits unless they explicitly set
+those bits; numeric modes of five or more digits and operator assignment
+modes can explicitly clear them.
+
+Parent creation uses the original umask with owner write/search bits unmasked.
+`-m` does not change parent permissions. Inherited default ACLs still apply;
+gutil does not widen a parent's ACL when it restricts the owner's write access.
+Trailing `/.`, `..`, repeated operands, and existing directory aliases retain
+filesystem traversal and ordering semantics. Special-mode creation follows
+GNU's conservative initial permissions and affected-bit checks. On Linux,
+`-m +t` can leave ordinary permissions at 755, whereas `-m 1777` explicitly
+requests all ordinary permissions and produces 1777.
+
+Windows directories use inherited ACLs; a supplied POSIX mode is validated and
+produces a warning because it cannot set Unix permission bits. On systems
+without active SELinux or SMACK labeling, `-Z` and bare `--context` are no-ops,
+and an explicit context produces a warning. Assignment on active labeling
+systems is not yet implemented and is rejected before creating directories.
+No active label assignment is silently claimed.
+
+Rich progress and diagnostics use stderr. Verbose output quotes and escapes
+paths; its text intentionally differs from GNU's localized verbose messages.

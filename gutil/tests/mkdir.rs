@@ -53,7 +53,7 @@ fn parses_clustered_options_worker_aliases_and_literal_names() {
     }
     success(
         &invocation(root)
-            .args(["--parents", "--jobs", "2", "deep/leaf"])
+            .args(["--parents", "--verbose", "--jobs", "2", "deep/leaf"])
             .output()
             .unwrap(),
     );
@@ -75,6 +75,11 @@ fn rejects_invalid_requests_before_mutating_the_filesystem() {
         vec![],
         vec!["new", "-m"],
         vec!["new", "--mode=888"],
+        vec!["new", "--mode=10000"],
+        vec!["new", "--mode=+8"],
+        vec!["new", "--mode=u+1"],
+        vec!["new", "--mode=+1-r"],
+        vec!["new", "--mode=u"],
         vec!["new", "--mode=u+gg"],
         vec!["new", "--unknown"],
         vec!["new", "-j0"],
@@ -177,7 +182,11 @@ fn applies_leaf_modes_and_preserves_existing_directory_permissions() {
     use std::os::unix::fs::{symlink, PermissionsExt};
     let fixture = tempfile::tempdir().unwrap();
     let root = fixture.path();
-    success(&masked(root, "027", &["-p", "-m", "000", "parent/child"]));
+    success(&masked(
+        root,
+        "027",
+        &["-p", "--mode", "000", "parent/child"],
+    ));
     assert_eq!(mode(&root.join("parent")), 0o750);
     assert_eq!(mode(&root.join("parent/child")), 0);
     fs::set_permissions(root.join("parent"), fs::Permissions::from_mode(0o711)).unwrap();
@@ -328,6 +337,9 @@ fn symbolic_and_operator_modes_preserve_documented_creation_semantics() {
     let root = fixture.path();
     for (index, (specification, expected)) in [
         ("0644", 0o644),
+        ("07777", 0o7777),
+        ("1777", 0o1777),
+        ("u=rwx,g=u,o=g,u-w,g-w,o-w", 0o555),
         ("00755", 0o755),
         ("u=rw,g=u,o=g", 0o666),
         ("a+t", 0o1755),
@@ -356,4 +368,136 @@ fn symbolic_and_operator_modes_preserve_documented_creation_semantics() {
         success(&masked(root, "022", &["-m", specification, &name]));
         assert_eq!(mode(&root.join(name)), expected, "{specification}");
     }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn inherited_default_acls_and_parent_owner_access_match_gnu() {
+    let Some(directory) = std::env::var_os("GNU_COREUTILS_DIR") else {
+        return;
+    };
+    if Command::new("setfacl").arg("--version").output().is_err() {
+        return;
+    }
+    let gnu = Path::new(&directory).join("mkdir");
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    for (index, args) in [
+        vec!["plain"],
+        vec!["-m755", "plain"],
+        vec!["-p", "parent/leaf"],
+        vec!["-p", "-m755", "parent/leaf"],
+        vec!["-p", "-m000", "parent/leaf"],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let actual = root.join(format!("actual-{index}"));
+        let expected = root.join(format!("expected-{index}"));
+        for path in [&actual, &expected] {
+            fs::create_dir(path).unwrap();
+            let result = Command::new("setfacl")
+                .args(["-m", "d:u::r-x,d:g::rwx,d:o::---"])
+                .arg(path)
+                .output()
+                .unwrap();
+            success(&result);
+        }
+        let result = masked(&actual, "027", &args);
+        let reference = Command::new("sh")
+            .current_dir(&expected)
+            .env("LC_ALL", "C")
+            .args([
+                "-c",
+                "umask \"$1\"; shift; exec \"$@\"",
+                "mkdir-fixture",
+                "027",
+            ])
+            .arg(&gnu)
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status, reference.status,
+            "{args:?}: {result:?} / {reference:?}"
+        );
+        for name in ["plain", "parent", "parent/leaf"] {
+            assert_eq!(
+                actual.join(name).exists(),
+                expected.join(name).exists(),
+                "{args:?}: {name}"
+            );
+            if expected.join(name).exists() {
+                assert_eq!(
+                    mode(&actual.join(name)),
+                    mode(&expected.join(name)),
+                    "{args:?}: {name}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn rejects_non_utf8_mode_and_context_values_before_creation() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+    let fixture = tempfile::tempdir().unwrap();
+    for option in [b"--mode=\xff".as_slice(), b"--context=\xff"] {
+        let output = invocation(fixture.path())
+            .arg("new")
+            .arg(OsString::from_vec(option.to_vec()))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(!fixture.path().join("new").exists());
+    }
+}
+
+#[test]
+fn closed_stderr_preserves_failures_and_does_not_prevent_warning_only_operations() {
+    use std::process::Stdio;
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    for (arguments, code) in [
+        (vec!["missing/child", "survivor"], 1),
+        (vec!["--unrecognized"], 2),
+        (vec!["-m755", "with-mode"], 0),
+    ] {
+        let mut child = invocation(root)
+            .args(&arguments)
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        drop(child.stderr.take());
+        let status = child.wait().unwrap();
+        assert_eq!(status.code(), Some(code), "{arguments:?}");
+    }
+    assert!(root.join("survivor").is_dir());
+    assert!(root.join("with-mode").is_dir());
+    let mut child = invocation(root)
+        .args(["--context=example", "context"])
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stderr.take());
+    let status = child.wait().unwrap();
+    assert_eq!(root.join("context").is_dir(), status.success());
+    assert!(matches!(status.code(), Some(0 | 1)));
+}
+
+#[test]
+fn creates_absolute_paths_and_leading_current_directory_components() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    success(
+        &invocation(root)
+            .args(["--parents", "./leading/leaf"])
+            .arg(root.join("absolute/leaf"))
+            .output()
+            .unwrap(),
+    );
+    assert!(root.join("leading/leaf").is_dir());
+    assert!(root.join("absolute/leaf").is_dir());
 }

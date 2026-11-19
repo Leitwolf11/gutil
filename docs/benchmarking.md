@@ -181,3 +181,26 @@ and hard-link relationships across 101 cases.
 ```sh
 GNU_COREUTILS_DIR=/usr/bin cargo test --locked -p gutil --test mutate filesystem_state_and_exit_codes_match_gnu -- --ignored
 ```
+
+## Directory creation
+
+Compare directory creation and existing-directory checks on a POSIX host:
+
+```sh
+cargo build --locked --release -p gutil
+python3 benchmarks/mkdir.py target/release/gutil --gnu /usr/bin/mkdir --count 512 --rounds 30
+```
+
+The four workloads create 512 sibling directories, create 512 siblings with
+mode 750, create 128 four-level parent paths, and accept 512 existing directories
+with `-p`. Each pair uses identical operands, a child umask of 022, the C locale,
+and UTC timezone. gutil uses one worker with configuration and progress disabled.
+Setup, cleanup, and complete tree/mode verification are outside timed intervals;
+process creation, directory operations, and waiting for exit are included.
+
+Four warmup rounds precede 30 recorded rounds, shuffling command order with seed
+42. JSON output includes raw timings, medians, IQRs, paired reductions, binary
+hashes, and host details. The default fixture lives under the platform temporary
+directory. Record its filesystem and cache/durability limitations alongside any
+performance conclusions. This harness measures POSIX modes; Windows ACL behavior
+is covered separately by native integration tests.
