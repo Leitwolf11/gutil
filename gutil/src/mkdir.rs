@@ -184,7 +184,11 @@ impl<W: Write, E: Write> Creator<'_, W, E> {
         } else {
             self.mask.original() & !0o300
         };
-        let entry = platform::Entry::new(path).map_err(|error| path_error(path, &error))?;
+        let entry = if requested.is_some() {
+            platform::Entry::new(path).map_err(|error| path_error(path, &error))?
+        } else {
+            platform::Entry::without_adjustment(path)
+        };
         match self.mask.create(&entry, permissions, mask) {
             Ok(()) => {}
             Err(error)

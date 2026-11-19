@@ -115,7 +115,18 @@ fn ancestor_replacement_cannot_redirect_creation_or_permission_adjustment() {
     fs::remove_dir(moved.join("child")).unwrap();
     symlink(victim.join("child"), moved.join("child")).unwrap();
     assert!(entry.permissions().is_err());
-    assert!(entry.set_permissions(0o777).is_err());
+    // macOS can change the symlink itself; Linux may reject that operation.
+    // Both must preserve the linked directory's permissions.
+    if entry.set_permissions(0o777).is_ok() {
+        assert_eq!(
+            fs::symlink_metadata(moved.join("child"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o7777,
+            0o777
+        );
+    }
     assert_eq!(
         fs::metadata(victim.join("child"))
             .unwrap()

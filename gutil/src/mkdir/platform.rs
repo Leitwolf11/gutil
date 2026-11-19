@@ -84,6 +84,15 @@ pub(super) struct Entry<'a> {
 
 #[cfg(unix)]
 impl<'a> Entry<'a> {
+    // Inherited-mode creation never performs chmod. Resolve that single mkdirat
+    // normally rather than opening a parent that no later operation needs.
+    pub(super) fn without_adjustment(path: &'a Path) -> Self {
+        Self {
+            parent: None,
+            name: path.as_os_str(),
+        }
+    }
+
     pub(super) fn new(path: &'a Path) -> io::Result<Self> {
         use nix::fcntl::{openat, OFlag, AT_FDCWD};
         use std::os::unix::ffi::OsStrExt;
@@ -177,6 +186,10 @@ pub(super) struct Entry<'a>(&'a Path);
 
 #[cfg(windows)]
 impl<'a> Entry<'a> {
+    pub(super) fn without_adjustment(path: &'a Path) -> Self {
+        Self(path)
+    }
+
     #[allow(
         clippy::unnecessary_wraps,
         reason = "Opening a parent directory can fail on Unix."
