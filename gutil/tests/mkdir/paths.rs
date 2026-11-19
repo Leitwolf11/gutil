@@ -40,3 +40,20 @@ fn alternating_existing_and_new_operands_keep_filesystem_state_current() {
     }
     assert_eq!(fs::read(root.join("blocked")).unwrap(), b"unchanged");
 }
+
+#[cfg(unix)]
+#[test]
+fn root_operands_are_existing_directories_and_keep_their_permissions() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    let original = mode(Path::new("/"));
+    success(
+        &invocation(root)
+            .args(["-p", "-m000", "/", "///", ".", "./"])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(mode(Path::new("/")), original);
+    let output = invocation(root).arg("/").output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+}

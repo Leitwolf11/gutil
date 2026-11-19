@@ -1,3 +1,4 @@
+#[cfg(any(target_os = "linux", windows))]
 use std::fs;
 use std::io;
 use std::path::Path;
