@@ -1,5 +1,25 @@
 use super::*;
 
+#[cfg(windows)]
+#[test]
+fn temporary_roots_reject_drive_relative_rooted_and_unc_templates() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    for template in [
+        r"C:driveXXX",
+        r"\rootXXX",
+        r"C:\absoluteXXX",
+        r"\\server\share\nameXXX",
+    ] {
+        let output = invocation(root)
+            .args(["--tmpdir", template])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{template:?}: {output:?}");
+        assert_eq!(fs::read_dir(root).unwrap().count(), 0);
+    }
+}
+
 #[test]
 fn rejects_invalid_requests_before_creating_anything() {
     let fixture = tempfile::tempdir().unwrap();

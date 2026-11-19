@@ -1,5 +1,20 @@
 use super::*;
 
+#[test]
+fn unicode_templates_suffixes_and_attached_roots_keep_native_characters() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    fs::create_dir(root.join("箱")).unwrap();
+    let output = invocation(root)
+        .args(["-dqp箱", "--suffix=.例", "λ📁-XXXX"])
+        .output()
+        .unwrap();
+    let created = path(&output);
+    assert_eq!(created.parent(), Some(Path::new("箱")));
+    assert_name(&created, "λ📁-", ".例", 4);
+    assert!(root.join(created).is_dir());
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn native_non_utf8_templates_and_suffixes_round_trip_without_loss() {
