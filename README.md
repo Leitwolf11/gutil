@@ -2,7 +2,7 @@
 
 gutil is a Rust 2021 project to reimplement GNU coreutils as a single executable for Linux, macOS, and Windows. GNU compatibility and lower runtime are project goals. gutil includes `ls` for directory listings, `cat` for concatenating files and standard input, `pwd` for printing the working directory, and `cache` for storing and retrieving files by SHA-256 digest.
 
-gutil also includes `head` and `tail` for selecting parts of streams, `wc` for counts, and the MD5, SHA-1, and SHA-2 checksum utilities.
+gutil also includes `head` and `tail` for selecting parts of streams, `wc` for counts, `tee` for copying a stream to multiple outputs, and the MD5, SHA-1, and SHA-2 checksum utilities.
 
 The name gutil has no expanded form.
 
@@ -21,6 +21,7 @@ gutil cat -n README.md
 gutil pwd -P
 gutil tail -n 20 application.log
 gutil wc -l README.md
+gutil cat README.md | gutil tee saved-readme.md
 ```
 
 `ls` supports `-a` (`--all`), `-A` (`--almost-all`), `-d` (`--directory`), `-l`, `-1`, and `--`. It accepts multiple file and directory operands and defaults to the current directory. It sorts by the native filename representation and emits one entry per line. Long output uses UTC timestamps and numeric Unix owner and group IDs. On Windows, long output reports basic read-only information and marks unavailable ownership fields with `-`. Hidden entries are identified by a leading dot on all platforms.

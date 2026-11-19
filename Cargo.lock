@@ -534,7 +534,7 @@ dependencies = [
  "mio",
  "parking_lot 0.12.5",
  "rustix 1.1.6",
- "signal-hook",
+ "signal-hook 0.3.18",
  "signal-hook-mio",
  "winapi",
 ]
@@ -801,7 +801,7 @@ dependencies = [
 
 [[package]]
 name = "gutil"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "ariadne",
  "atomicwrites",
@@ -813,9 +813,11 @@ dependencies = [
  "gutil-plugin-sdk",
  "ignore",
  "insta",
+ "io-close",
  "jiff",
  "md-5",
  "memchr",
+ "nix",
  "parking_lot 0.13.0",
  "proptest",
  "regex",
@@ -828,6 +830,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
+ "signal-hook 0.4.6",
  "smallvec",
  "sysinfo",
  "tempfile",
@@ -1150,6 +1153,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "io-close"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cadcf447f06744f8ce713d2d6239bb5bde2c357a452397a9ed90c625da390bc"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "io-extras"
 version = "0.18.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1412,6 +1425,18 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "nix"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77730ed34f01f4990cb2ea67fec715ecebc6fab9a6396cf83c5529b13f581bdc"
+dependencies = [
+ "bitflags",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
 ]
 
 [[package]]
@@ -2195,6 +2220,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-hook"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49f7447afd772ca79ad17ae0a3972a6b0df0cb4b80990fd82707593e9e012a74"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
 name = "signal-hook-mio"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2202,7 +2237,7 @@ checksum = "b75a19a7a740b25bc7944bdee6172368f988763b744e3d4dfe753f6b4ece40cc"
 dependencies = [
  "libc",
  "mio",
- "signal-hook",
+ "signal-hook 0.3.18",
 ]
 
 [[package]]
@@ -2462,6 +2497,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "windows-sys 0.61.2",
 ]
