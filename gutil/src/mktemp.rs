@@ -124,7 +124,11 @@ fn reserve(
             Action::Directory => create_directory(&path).map(|()| None),
             Action::NameOnly => match fs::symlink_metadata(&path) {
                 Ok(_) => Err(io::Error::from(io::ErrorKind::AlreadyExists)),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    #[cfg(windows)]
+                    native::validate_missing_parent(&path)?;
+                    Ok(None)
+                }
                 Err(error) => Err(error),
             },
         };

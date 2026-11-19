@@ -49,3 +49,18 @@ pub(super) fn write_path(output: &mut impl Write, path: &Path) -> io::Result<()>
     output.write_all(path.as_os_str().to_string_lossy().as_bytes())?;
     output.write_all(b"\n")
 }
+
+#[cfg(windows)]
+pub(super) fn validate_missing_parent(path: &Path) -> io::Result<()> {
+    // Windows can report a missing path even when an ancestor is a file.
+    // A dry run may use absent directories, but cannot traverse a file.
+    for parent in path.ancestors().skip(1) {
+        match std::fs::metadata(parent) {
+            Ok(metadata) if metadata.is_dir() => return Ok(()),
+            Ok(_) => return Err(io::Error::from(io::ErrorKind::NotADirectory)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
