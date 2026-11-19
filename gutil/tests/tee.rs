@@ -178,9 +178,9 @@ fn closed_pipes_continue_or_exit_without_waiting_for_more_input() {
     }
 }
 
-#[cfg(unix)]
 #[test]
-fn default_broken_pipe_terminates_with_sigpipe() {
+fn default_broken_pipe_terminates_the_command() {
+    #[cfg(unix)]
     use std::os::unix::process::ExitStatusExt;
     let fixture = tempfile::tempdir().unwrap();
     let mut child = command(fixture.path(), &[])
@@ -192,7 +192,11 @@ fn default_broken_pipe_terminates_with_sigpipe() {
     drop(child.stdout.take());
     let mut stdin = child.stdin.take().unwrap();
     stdin.write_all(b"data").unwrap();
-    assert_eq!(wait(child).status.signal(), Some(13));
+    let output = wait(child);
+    #[cfg(unix)]
+    assert_eq!(output.status.signal(), Some(13));
+    #[cfg(windows)]
+    assert_eq!(output.status.code(), Some(1));
 }
 
 #[cfg(unix)]
@@ -418,5 +422,63 @@ fn the_last_output_error_option_controls_broken_pipe_handling() {
         );
         assert_eq!(output.stderr.is_empty(), status == 0);
         drop(stdin);
+    }
+}
+
+#[test]
+fn closed_stderr_does_not_mask_open_or_parse_failures() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    fs::write(root.join("input"), b"complete stream").unwrap();
+    for (arguments, code) in [
+        (vec!["--output-error=warn", "missing/child", "survivor"], 1),
+        (vec!["--unrecognized"], 2),
+    ] {
+        let mut child = command(root, &arguments)
+            .stdin(fs::File::open(root.join("input")).unwrap())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        drop(child.stderr.take());
+        let output = wait(child);
+        assert_eq!(
+            output.status.code(),
+            Some(code),
+            "{arguments:?}: {output:?}"
+        );
+        if code == 1 {
+            assert_eq!(output.stdout, b"complete stream");
+            assert_eq!(fs::read(root.join("survivor")).unwrap(), b"complete stream");
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn warn_modes_forward_surviving_outputs_even_when_diagnostics_cannot_be_written() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    fs::write(root.join("input"), b"complete stream").unwrap();
+    for mode in ["warn", "warn-nopipe", "exit", "exit-nopipe"] {
+        let mut child = command(
+            root,
+            &[&format!("--output-error={mode}"), "/dev/full", "survivor"],
+        )
+        .stdin(fs::File::open(root.join("input")).unwrap())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+        drop(child.stderr.take());
+        let output = wait(child);
+        assert_eq!(output.status.code(), Some(1), "{mode}: {output:?}");
+        assert_eq!(output.stdout, b"complete stream");
+        let expected = if mode.starts_with("warn") {
+            b"complete stream".as_slice()
+        } else {
+            b""
+        };
+        assert_eq!(fs::read(root.join("survivor")).unwrap(), expected);
     }
 }

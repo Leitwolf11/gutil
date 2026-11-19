@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::io;
 use std::rc::Rc;
 
-use super::{copy_stream, ErrorMode, Output, Sink};
+use super::{copy_stream, copy_with_output, ErrorMode, Options, Output, Sink};
 use crate::{config::Settings, presentation::Presentation};
 
 #[derive(Default)]
@@ -133,5 +133,54 @@ fn ignored_write_failures_do_not_hide_non_pipe_close_errors() {
     assert!(failed.borrow().closed);
     assert_eq!(survivor.borrow().bytes, b"complete stream");
     assert!(survivor.borrow().closed);
+    assert!(String::from_utf8_lossy(&errors).contains("delayed close failure"));
+}
+
+#[test]
+fn failure_to_acquire_stdout_returns_failure_without_file_operands() {
+    for mode in [
+        ErrorMode::Default,
+        ErrorMode::Warn,
+        ErrorMode::WarnNoPipe,
+        ErrorMode::Exit,
+        ErrorMode::ExitNoPipe,
+    ] {
+        let options = Options {
+            append: false,
+            ignore_interrupts: false,
+            mode,
+            paths: Vec::new(),
+            workers: crate::jobs::Count::checked(1).unwrap(),
+        };
+        let status = copy_with_output(
+            &options,
+            Presentation::new(&Settings::default()),
+            Err(io::Error::other("cannot duplicate stdout")),
+        )
+        .unwrap();
+        assert_eq!(status, 1);
+    }
+}
+
+#[test]
+fn exit_nopipe_stops_on_non_pipe_close_error_after_an_ignored_write_error() {
+    let failed = Rc::new(RefCell::new(State::default()));
+    let survivor = Rc::new(RefCell::new(State::default()));
+    let mut broken = output("broken", &failed, Some(io::ErrorKind::StorageFull));
+    broken.writer.write_error = Some(io::ErrorKind::BrokenPipe);
+    let mut errors = Vec::new();
+    let status = copy_stream(
+        &mut b"stop immediately".as_slice(),
+        vec![broken, output("not reached", &survivor, None)],
+        ErrorMode::ExitNoPipe,
+        Presentation::new(&Settings::default()),
+        &mut errors,
+        false,
+        None,
+    )
+    .unwrap();
+    assert_eq!(status, 1);
+    assert!(failed.borrow().closed);
+    assert_eq!(survivor.borrow().bytes, [] as [u8; 0]);
     assert!(String::from_utf8_lossy(&errors).contains("delayed close failure"));
 }

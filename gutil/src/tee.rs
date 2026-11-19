@@ -23,7 +23,7 @@ pub(crate) fn run(
         }
         Ok(Request::Copy(options)) => options,
         Err(error) => {
-            ui.error(&mut io::stderr(), "gutil tee", &error.to_string())?;
+            let _ = ui.error(&mut io::stderr(), "gutil tee", &error.to_string());
             return Ok(2);
         }
     };
@@ -47,7 +47,7 @@ pub(crate) fn run(
     match result {
         Ok(status) => Ok(status),
         Err(error) => {
-            ui.error(&mut io::stderr(), "gutil tee", &error.to_string())?;
+            let _ = ui.error(&mut io::stderr(), "gutil tee", &error.to_string());
             Ok(1)
         }
     }
@@ -141,10 +141,18 @@ fn standard_output() -> io::Result<Destination> {
 }
 
 fn copy(options: &Options, ui: Presentation) -> io::Result<u8> {
+    copy_with_output(options, ui, standard_output())
+}
+
+fn copy_with_output(
+    options: &Options,
+    ui: Presentation,
+    standard_output: io::Result<Destination>,
+) -> io::Result<u8> {
     let mut outputs = Vec::with_capacity(options.paths.len().saturating_add(1));
     let mut errors = io::stderr().lock();
     let mut failed = false;
-    match standard_output() {
+    match standard_output {
         Ok(writer) => outputs.push(Output {
             name: "standard output".to_owned(),
             writer,
@@ -175,11 +183,11 @@ fn copy(options: &Options, ui: Presentation) -> io::Result<u8> {
                 writer: Destination::File(file),
             }),
             Err(error) => {
-                ui.error(
+                let _ = ui.error(
                     &mut errors,
                     "gutil tee",
                     &format!("{}: {error}", path.display()),
-                )?;
+                );
                 failed = true;
                 if options.mode.exits() {
                     return Ok(1);
@@ -216,7 +224,7 @@ fn copy_stream<W: Sink>(
             Ok(size) => size,
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
             Err(error) => {
-                ui.error(errors, "gutil tee", &format!("standard input: {error}"))?;
+                let _ = ui.error(errors, "gutil tee", &format!("standard input: {error}"));
                 failed = true;
                 break;
             }
@@ -279,13 +287,19 @@ fn output_error(
     let pipe = error.kind() == io::ErrorKind::BrokenPipe;
     if pipe && mode == ErrorMode::Default {
         #[cfg(unix)]
-        signal_hook::low_level::emulate_default_handler(signal_hook::consts::SIGPIPE)?;
-        return Ok(true);
+        {
+            signal_hook::low_level::emulate_default_handler(signal_hook::consts::SIGPIPE)?;
+            return Ok(true);
+        }
+        #[cfg(windows)]
+        return Err(io::Error::new(error.kind(), format!("{name}: {error}")));
     }
     if pipe && mode.ignores_pipe() {
         return Ok(false);
     }
-    ui.error(errors, "gutil tee", &format!("{name}: {error}"))?;
+    // Reporting must not turn an output failure into success when stderr is
+    // closed, or prevent warn modes from forwarding to surviving outputs.
+    let _ = ui.error(errors, "gutil tee", &format!("{name}: {error}"));
     *failed = true;
     Ok(mode.exits())
 }
