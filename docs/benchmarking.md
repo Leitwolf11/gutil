@@ -38,6 +38,8 @@ Compare timings from the same run. Long-format results include metadata formatti
 - [2026-11-18 · Linux x86-64 · checksum backend comparison](bench-results/2026-11-18-linux-x86-64-checksum-backend.md)
 - [2026-11-18 · Linux x86-64 · lazy worker discovery](bench-results/2026-11-18-linux-x86-64-startup.md)
 
+- [2026-11-19 · Linux x86-64 · stream duplication](bench-results/2026-11-19-linux-x86-64-tee.md)
+
 ## Checksum throughput
 
 From the repository root, use a directory containing the GNU `md5sum`,
@@ -181,3 +183,30 @@ and hard-link relationships across 101 cases.
 ```sh
 GNU_COREUTILS_DIR=/usr/bin cargo test --locked -p gutil --test mutate filesystem_state_and_exit_codes_match_gnu -- --ignored
 ```
+
+## Stream duplication
+
+Build a release executable and compare `tee` against GNU Coreutils:
+
+```sh
+cargo build --locked --release -p gutil
+python3 benchmarks/tee.py target/release/gutil --gnu /usr/bin/tee --rounds 30
+```
+
+The harness compares 32 MiB regular-file and pipe stdin with stdout directed
+to the null device and zero, one, or four output files on the fixture filesystem.
+Both utilities process the same bytes and outputs. gutil uses one worker,
+configuration loading and progress are disabled, and every process uses the
+C locale and UTC timezone. Verification checks stdout and every output file
+against SHA-256 before timing, then checks every timed output file after timing.
+Creating fixtures, deleting old outputs, and verifying bytes are outside timed
+intervals; creating processes, opening files, copying input, and waiting for exit
+are inside. Pipe cases include the Python feeder's work.
+
+Four warmup rounds precede 30 measured rounds; a fixed seed shuffles the two
+invocations within each round. JSON output records raw timings, medians, IQRs,
+paired reductions, binary hashes, and host details. Use `--mib`, `--rounds`, and
+`--warmup` to change the workload. For equal single-CPU budgets on Linux, prefix
+the invocation with an appropriate `taskset -c CPU`; the affinity also applies
+to pipe feeders and children. tmpfs results measure memory-backed copying,
+without a durability guarantee or physical-disk throughput claim.
