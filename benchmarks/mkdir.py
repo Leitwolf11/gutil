@@ -54,6 +54,8 @@ def verify(root, expected, permissions):
 
 def benchmark(options, root):
     binaries = {"gutil": executable(options.gutil), "gnu": executable(options.gnu)}
+    if options.before is not None:
+        binaries["before"] = executable(options.before)
     environment = dict(os.environ, LC_ALL="C", TZ="UTC")
     siblings = [f"d{index:04}" for index in range(options.count)]
     nested = [f"p{index:04}/a/b/leaf" for index in range(options.count // 4)]
@@ -71,6 +73,8 @@ def benchmark(options, root):
             "gutil": [str(binaries["gutil"]), "--no-config", "--progress=never", "--jobs=1", "mkdir", *flags, *operands],
             "gnu": [str(binaries["gnu"]), *flags, *operands],
         }
+        if "before" in binaries:
+            commands["before"] = [str(binaries["before"]), "--no-config", "--progress=never", "--jobs=1", "mkdir", *flags, *operands]
         samples = {label: [] for label in commands}
         work = root / "work"
         for round_index in range(options.warmup + options.rounds):
@@ -88,7 +92,9 @@ def benchmark(options, root):
                 if round_index >= options.warmup:
                     samples[label].append(elapsed)
         reductions = [100 * (gnu - actual) / gnu for actual, gnu in zip(samples["gutil"], samples["gnu"], strict=True)]
+        before_reductions = [100 * (before - actual) / before for actual, before in zip(samples["gutil"], samples.get("before", []), strict=False)]
         results[name] = {
+            "paired_before_reduction_percent": summarize(before_reductions) if before_reductions else None,
             "directories": len(expected), "operands": len(operands),
             "milliseconds": {label: summarize(values) for label, values in samples.items()},
             "paired_reduction_percent": summarize(reductions), "samples_ms": samples,
@@ -106,6 +112,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("gutil", type=Path)
     parser.add_argument("--gnu", type=Path, default=Path("/usr/bin/mkdir"))
+    parser.add_argument("--before", type=Path, help="Optional saved gutil baseline with the same mkdir options")
     parser.add_argument("--count", type=int, default=512)
     parser.add_argument("--rounds", type=int, default=30)
     parser.add_argument("--warmup", type=int, default=4)

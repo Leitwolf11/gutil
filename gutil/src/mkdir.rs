@@ -30,22 +30,13 @@ pub(crate) fn run(
             return Ok(2);
         }
     };
-    if !matches!(options.context, Context::Inherited) {
-        if platform::active_labels()? {
-            let _ = ui.error(
-                &mut io::stderr(),
-                "gutil mkdir",
-                "SELinux/SMACK context assignment is not implemented; no directories were created",
-            );
-            return Ok(1);
-        }
-        if let Context::Explicit(context) = &options.context {
-            let _ = ui.warning(
-                &mut io::stderr(),
-                "gutil mkdir",
-                &format!("security labeling is unavailable; ignoring context {context:?}"),
-            );
-        }
+    if !context_ready(
+        &options.context,
+        platform::active_labels,
+        ui,
+        &mut io::stderr(),
+    )? {
+        return Ok(1);
     }
     #[cfg(windows)]
     if options.mode.is_some() {
@@ -66,6 +57,33 @@ pub(crate) fn run(
     })
 }
 
+fn context_ready(
+    context: &Context,
+    probe: impl FnOnce() -> io::Result<bool>,
+    ui: Presentation,
+    errors: &mut impl Write,
+) -> io::Result<bool> {
+    if matches!(context, Context::Inherited) {
+        return Ok(true);
+    }
+    if probe()? {
+        let _ = ui.error(
+            errors,
+            "gutil mkdir",
+            "SELinux/SMACK context assignment is not implemented; no directories were created",
+        );
+        return Ok(false);
+    }
+    if let Context::Explicit(context) = context {
+        let _ = ui.warning(
+            errors,
+            "gutil mkdir",
+            &format!("security labeling is unavailable; ignoring context {context:?}"),
+        );
+    }
+    Ok(true)
+}
+
 struct Creator<'a, W, E> {
     options: &'a Options,
     mask: platform::Mask,
@@ -73,6 +91,7 @@ struct Creator<'a, W, E> {
     output: &'a mut W,
     errors: &'a mut E,
     progress: Option<ProgressReport>,
+    prefer_existing: bool,
 }
 
 fn execute(options: &Options, mask: platform::Mask, ui: Presentation) -> u8 {
@@ -91,6 +110,7 @@ fn execute(options: &Options, mask: platform::Mask, ui: Presentation) -> u8 {
         output: &mut output,
         errors: &mut errors,
         progress: ui.progress("gutil mkdir", "directories", true),
+        prefer_existing: false,
     };
     let mut failed = false;
     for path in &options.paths {
@@ -111,9 +131,19 @@ fn execute(options: &Options, mask: platform::Mask, ui: Presentation) -> u8 {
 
 impl<W: Write, E: Write> Creator<'_, W, E> {
     fn ensure(&mut self, path: &Path) -> io::Result<()> {
+        // Remember the cheaper syscall order for a run of existing operands,
+        // not their existence: every operand still gets a fresh filesystem check.
+        if self.options.parents && self.prefer_existing && path.is_dir() {
+            return Ok(());
+        }
         match self.create_one(path, true) {
-            Ok(_) => return Ok(()),
-            Err(error) if self.options.parents && error.kind() == io::ErrorKind::NotFound => {}
+            Ok(created) => {
+                self.prefer_existing = !created;
+                return Ok(());
+            }
+            Err(error) if self.options.parents && error.kind() == io::ErrorKind::NotFound => {
+                self.prefer_existing = false;
+            }
             Err(error) => return Err(error),
         }
         let mut prefix = PathBuf::new();
@@ -172,12 +202,13 @@ impl<W: Write, E: Write> Creator<'_, W, E> {
         if let Some(progress) = &mut self.progress {
             progress.advance(1, self.errors);
         }
+        #[cfg(unix)]
         Self::adjust(path, requested).map_err(|error| path_error(path, &error))?;
         Ok(true)
     }
 
+    #[cfg(unix)]
     fn adjust(path: &Path, requested: Option<Evaluated>) -> io::Result<()> {
-        #[cfg(unix)]
         if let Some(mode) = requested {
             let normalized = path
                 .as_os_str()
@@ -192,8 +223,6 @@ impl<W: Write, E: Write> Creator<'_, W, E> {
                 platform::set_permissions(path, target)?;
             }
         }
-        #[cfg(windows)]
-        let _ = (path, requested);
         Ok(())
     }
 }
@@ -222,3 +251,6 @@ fn path_error(path: &Path, error: &io::Error) -> io::Error {
 fn quote(path: &Path) -> String {
     format!("'{}'", path.as_os_str().to_string_lossy().escape_debug())
 }
+
+#[cfg(test)]
+mod tests;

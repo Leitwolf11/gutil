@@ -228,8 +228,11 @@ Setup, cleanup, and complete tree/mode verification are outside timed intervals;
 process creation, directory operations, and waiting for exit are included.
 
 Four warmup rounds precede 30 recorded rounds, shuffling command order with seed
-42. JSON output includes raw timings, medians, IQRs, paired reductions, binary
-hashes, and host details. The default fixture lives under the platform temporary
+42. Repeat with `--count 4096` to distinguish larger batches from startup-dominated
+ones. Use `--before PATH` to add an immutable gutil baseline to the same interleaved
+run; every binary receives the same operands and worker budget. JSON output includes
+raw timings, medians, IQRs, paired reductions against GNU and the saved baseline,
+binary hashes, and host details. The default fixture lives under the platform temporary
 directory. Record its filesystem and cache/durability limitations alongside any
 performance conclusions. This harness measures POSIX modes; Windows ACL behavior
 is covered separately by native integration tests.

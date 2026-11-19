@@ -180,9 +180,7 @@ impl Mode {
 }
 
 fn octal(bytes: &[u8]) -> Result<u32, InvalidMode> {
-    if bytes.is_empty() {
-        return Err(InvalidMode);
-    }
+    // Both callers have already established that the first byte is a digit.
     bytes.iter().try_fold(0u32, |value, byte| {
         if !matches!(byte, b'0'..=b'7') {
             return Err(InvalidMode);

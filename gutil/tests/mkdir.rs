@@ -150,24 +150,41 @@ fn context_requests_never_silently_claim_active_label_assignment() {
 
 #[cfg(unix)]
 fn masked(root: &Path, mask: &str, arguments: &[&str]) -> Output {
-    Command::new("sh")
-        .current_dir(root)
-        .env("LC_ALL", "C")
-        .args([
-            "-c",
-            "umask \"$1\"; shift; exec \"$@\"",
-            "mkdir-fixture",
-            mask,
-            env!("CARGO_BIN_EXE_gutil"),
-            "--no-config",
-            "--progress=never",
-            "--color=never",
-            "--jobs=1",
-            "mkdir",
-        ])
-        .args(arguments)
-        .output()
-        .unwrap()
+    let mut command = Command::new("sh");
+    command.current_dir(root).env("LC_ALL", "C").args([
+        "-c",
+        "umask \"$1\"; shift; exec \"$@\"",
+        "mkdir-fixture",
+        mask,
+        env!("CARGO_BIN_EXE_gutil"),
+        "--no-config",
+        "--progress=never",
+        "--color=never",
+        "--jobs=1",
+        "mkdir",
+    ]);
+    if std::env::var_os("CARGO_LLVM_COV").is_some()
+        && u32::from_str_radix(mask, 8).unwrap() & 0o600 != 0
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Restrictive child umasks must affect directories, not make the
+        // profiler's own output unreadable to the parent coverage collector.
+        let template = std::env::var_os("LLVM_PROFILE_FILE").unwrap();
+        let directory = Path::new(&template).parent().unwrap();
+        let profile = tempfile::Builder::new()
+            .prefix("gutil-mkdir-mask-")
+            .suffix(".profraw")
+            .tempfile_in(directory)
+            .unwrap();
+        profile
+            .as_file()
+            .set_permissions(fs::Permissions::from_mode(0o600))
+            .unwrap();
+        let (file, path) = profile.keep().unwrap();
+        drop(file);
+        command.env("LLVM_PROFILE_FILE", path);
+    }
+    command.args(arguments).output().unwrap()
 }
 
 #[cfg(unix)]
@@ -500,4 +517,63 @@ fn creates_absolute_paths_and_leading_current_directory_components() {
     );
     assert!(root.join("leading/leaf").is_dir());
     assert!(root.join("absolute/leaf").is_dir());
+}
+
+#[test]
+fn alternating_existing_and_new_operands_keep_filesystem_state_current() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    fs::create_dir(root.join("existing")).unwrap();
+    fs::write(root.join("blocked"), b"unchanged").unwrap();
+    let output = invocation(root)
+        .args([
+            "-pv",
+            "existing",
+            "new-a",
+            "existing",
+            "new-b",
+            "blocked/child",
+            "new-c",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout).lines().count(), 3);
+    for name in ["existing", "new-a", "new-b", "new-c"] {
+        assert!(root.join(name).is_dir());
+    }
+    assert_eq!(fs::read(root.join("blocked")).unwrap(), b"unchanged");
+}
+
+#[test]
+fn verbose_output_failures_remain_nonzero_after_directory_creation() {
+    use std::process::Stdio;
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    for count in [1, 128] {
+        let names: Vec<_> = (0..count)
+            .map(|index| format!("{count}-{index}-{}", "x".repeat(120)))
+            .collect();
+        let (reader, writer) = std::io::pipe().unwrap();
+        drop(reader);
+        let output = invocation(root)
+            .arg("-v")
+            .args(&names)
+            .stdout(writer)
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        for name in names {
+            assert!(root.join(name).is_dir());
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn explicit_modes_work_on_created_operands_with_trailing_separators() {
+    let fixture = tempfile::tempdir().unwrap();
+    success(&masked(fixture.path(), "022", &["-m1777", "trailing/"]));
+    assert_eq!(mode(&fixture.path().join("trailing")), 0o1777);
 }

@@ -100,30 +100,40 @@ pub(super) fn set_permissions(path: &Path, permissions: u32) -> io::Result<()> {
     .map_err(io::Error::from)
 }
 
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "The capability interface is fallible on Linux and shared across native platforms."
+)]
 pub(super) fn active_labels() -> io::Result<bool> {
     #[cfg(target_os = "linux")]
     {
-        if Path::new("/sys/fs/selinux/enforce").try_exists()? {
-            return Ok(true);
-        }
-        match fs::read_to_string("/proc/self/attr/smack/current") {
-            Ok(_) => Ok(true),
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::NotFound
-                        | io::ErrorKind::InvalidInput
-                        | io::ErrorKind::Unsupported
-                ) =>
-            {
-                Ok(false)
-            }
-            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => Ok(true),
-            Err(error) => Err(error),
-        }
+        active_labels_at(
+            Path::new("/sys/fs/selinux/enforce"),
+            Path::new("/proc/self/attr/smack/current"),
+        )
     }
     #[cfg(not(target_os = "linux"))]
     {
         Ok(false)
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(super) fn active_labels_at(selinux: &Path, smack: &Path) -> io::Result<bool> {
+    if selinux.try_exists()? {
+        return Ok(true);
+    }
+    match fs::read_to_string(smack) {
+        Ok(_) => Ok(true),
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::InvalidInput | io::ErrorKind::Unsupported
+            ) =>
+        {
+            Ok(false)
+        }
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => Ok(true),
+        Err(error) => Err(error),
     }
 }
