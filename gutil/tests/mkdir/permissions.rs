@@ -134,7 +134,7 @@ fn explicit_modes_warn_and_preserve_native_inherited_acls() {
             .output()
             .unwrap();
         success(&output);
-        assert!(!output.stdout.is_empty());
+        assert_ne!(output.stdout.as_slice(), b"");
         output.stdout
     };
     assert_eq!(acl(&actual), acl(&control));
