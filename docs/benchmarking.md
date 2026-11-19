@@ -40,6 +40,8 @@ Compare timings from the same run. Long-format results include metadata formatti
 
 - [2026-11-19 · Linux x86-64 · stream duplication](bench-results/2026-11-19-linux-x86-64-tee.md)
 
+- [2026-11-19 · Linux x86-64 · directory creation](bench-results/2026-11-19-linux-x86-64-mkdir.md)
+
 ## Checksum throughput
 
 From the repository root, use a directory containing the GNU `md5sum`,
@@ -210,3 +212,29 @@ paired reductions, binary hashes, and host details. Use `--mib`, `--rounds`, and
 the invocation with an appropriate `taskset -c CPU`; the affinity also applies
 to pipe feeders and children. tmpfs results measure memory-backed copying,
 without a durability guarantee or physical-disk throughput claim.
+
+## Directory creation
+
+Compare directory creation and existing-directory checks on a POSIX host:
+
+```sh
+cargo build --locked --release -p gutil
+python3 benchmarks/mkdir.py target/release/gutil --gnu /usr/bin/mkdir --count 512 --rounds 30
+```
+
+The four workloads create 512 sibling directories, create 512 siblings with
+mode 750, create 128 four-level parent paths, and accept 512 existing directories
+with `-p`. Each pair uses identical operands, a child umask of 022, the C locale,
+and UTC timezone. gutil uses one worker with configuration and progress disabled.
+Setup, cleanup, and complete tree/mode verification are outside timed intervals;
+process creation, directory operations, and waiting for exit are included.
+
+Four warmup rounds precede 30 recorded rounds, shuffling command order with seed
+42. Repeat with `--count 4096` to distinguish larger batches from startup-dominated
+ones. Use `--before PATH` to add an immutable gutil baseline to the same interleaved
+run; every binary receives the same operands and worker budget. JSON output includes
+raw timings, medians, IQRs, paired reductions against GNU and the saved baseline,
+binary hashes, and host details. The default fixture lives under the platform temporary
+directory. Record its filesystem and cache/durability limitations alongside any
+performance conclusions. This harness measures POSIX modes; Windows ACL behavior
+is covered separately by native integration tests.

@@ -19,6 +19,7 @@ gutil ls -la .
 gutil --jobs 4 ls -la .
 gutil cat -n README.md
 gutil pwd -P
+gutil mkdir -p -m755 build/cache
 gutil tail -n 20 application.log
 gutil wc -l README.md
 gutil cat README.md | gutil tee saved-readme.md
