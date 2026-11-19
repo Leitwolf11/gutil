@@ -36,6 +36,24 @@ fn legacy_roots_also_reject_drive_prefixed_templates() {
     }
 }
 
+#[cfg(windows)]
+#[test]
+fn alternate_stream_templates_cannot_change_an_existing_file() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    fs::write(root.join("preserved"), b"preserved").unwrap();
+    for args in [
+        vec!["preserved:XXX"],
+        vec!["nameXXX:stream"],
+        vec!["--suffix=:stream", "nameXXX"],
+    ] {
+        let output = invocation(root).args(&args).output().unwrap();
+        assert_eq!(output.status.code(), Some(2), "{args:?}: {output:?}");
+        assert_eq!(fs::read_dir(root).unwrap().count(), 1);
+        assert_eq!(fs::read(root.join("preserved")).unwrap(), b"preserved");
+    }
+}
+
 #[test]
 fn rejects_invalid_requests_before_creating_anything() {
     let fixture = tempfile::tempdir().unwrap();

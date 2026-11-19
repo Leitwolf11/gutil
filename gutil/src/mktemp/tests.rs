@@ -35,6 +35,16 @@ fn templates_reject_nuls_before_any_filesystem_operation() {
     }
 }
 
+#[cfg(windows)]
+#[test]
+fn a_windows_device_handle_is_not_a_reserved_disk_file() {
+    let device = fs::File::open("NUL").unwrap();
+    let error = super::native::validate_disk_file(&device).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    let fixture = tempfile::tempfile().unwrap();
+    super::native::validate_disk_file(&fixture).unwrap();
+}
+
 #[test]
 fn collisions_preserve_existing_objects_and_retry_another_name() {
     let fixture = tempfile::tempdir().unwrap();

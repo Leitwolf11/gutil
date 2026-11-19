@@ -48,6 +48,9 @@ pub(super) enum Error {
     SuffixTemplate,
     #[error("a suffix must not contain a directory separator or NUL")]
     Suffix,
+    #[cfg(windows)]
+    #[error("temporary templates and suffixes must not name alternate data streams")]
+    AlternateStream,
     #[error("--tmpdir requires a relative template")]
     Absolute,
     #[error("-t requires a single filename component without a drive prefix")]

@@ -46,6 +46,17 @@ impl Template {
         {
             return Err(Error::Suffix);
         }
+        #[cfg(windows)]
+        {
+            let mut shape = native::string(&units[..end]);
+            shape.push(&suffix);
+            if std::path::Path::new(&shape)
+                .file_name()
+                .is_some_and(|name| name.as_encoded_bytes().contains(&b':'))
+            {
+                return Err(Error::AlternateStream);
+            }
+        }
         Ok(Self {
             prefix: native::string(&units[..start]),
             suffix,

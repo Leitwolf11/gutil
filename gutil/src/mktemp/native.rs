@@ -64,3 +64,15 @@ pub(super) fn validate_missing_parent(path: &Path) -> io::Result<()> {
     }
     Ok(())
 }
+
+#[cfg(windows)]
+pub(super) fn validate_disk_file(file: &std::fs::File) -> io::Result<()> {
+    if winapi_util::file::typ(file)?.is_disk() {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "temporary names must refer to disk files",
+        ))
+    }
+}

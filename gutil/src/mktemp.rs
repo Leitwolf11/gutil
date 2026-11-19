@@ -172,7 +172,10 @@ fn create_file(path: &std::path::Path) -> io::Result<File> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    options.open(path)
+    let file = options.open(path)?;
+    #[cfg(windows)]
+    native::validate_disk_file(&file)?;
+    Ok(file)
 }
 
 fn create_directory(path: &std::path::Path) -> io::Result<()> {

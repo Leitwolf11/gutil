@@ -626,7 +626,9 @@ Only the final component is created; intermediate directories must exist.
 Without a temporary-directory option, an explicit template is used as written
 and may be absolute. Unix files use mode 600 and directories use mode 700,
 restricted by the process umask. Windows objects retain native inherited ACLs. Both `-t` and `--tmpdir`
-reject Windows drive-prefixed or rooted templates.
+reject Windows drive-prefixed or rooted templates. Windows templates and
+suffixes cannot select alternate data streams, and a device handle cannot
+be reported as a reserved regular file.
 Unix output preserves non-UTF-8 path bytes; Windows output uses its Unicode
 text representation, replacing unpaired surrogates when necessary.
 
