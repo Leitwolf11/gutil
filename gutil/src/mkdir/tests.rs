@@ -136,3 +136,57 @@ fn ancestor_replacement_cannot_redirect_creation_or_permission_adjustment() {
         0o700
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn restores_umask_after_successful_and_failed_creation() {
+    use super::platform::{Entry, Mask};
+    use nix::sys::stat::{umask, Mode};
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    // umask is process-global: keep this regression isolated from other tests.
+    const CHILD: &str = "GUTIL_MKDIR_UMASK_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        // Respawn the unprivileged Cargo test harness; no security decision
+        // or production executable lookup depends on this test-only path.
+        let executable = std::env::current_exe().unwrap(); // nosemgrep: current-exe, rust.lang.security.current-exe.current-exe
+        let output = std::process::Command::new(executable)
+            .args([
+                "--exact",
+                "mkdir::tests::restores_umask_after_successful_and_failed_creation",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        return;
+    }
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    umask(Mode::from_bits_truncate(0o022));
+    for fail in [false, true] {
+        let created = root.join(if fail { "missing/child" } else { "created" });
+        {
+            let mut mask = Mask::capture();
+            assert_eq!(mask.original(), 0o022);
+            let result = mask.create(&Entry::without_adjustment(&created), 0o777, 0);
+            assert_eq!(result.is_err(), fail);
+            if !fail {
+                assert_eq!(
+                    fs::metadata(&created).unwrap().permissions().mode() & 0o777,
+                    0o777
+                );
+            }
+        }
+        let after = root.join(if fail {
+            "after-failure"
+        } else {
+            "after-success"
+        });
+        fs::create_dir(&after).unwrap();
+        assert_eq!(
+            fs::metadata(after).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+    }
+}

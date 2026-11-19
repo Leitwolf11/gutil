@@ -108,3 +108,40 @@ fn trailing_dot_uses_parent_creation_semantics_before_the_first_attempt() {
         assert_eq!(mode(&path) & 0o300, 0o300);
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn explicit_modes_warn_and_preserve_native_inherited_acls() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    let control = root.join("control");
+    fs::create_dir(&control).unwrap();
+    let output = invocation(root).args(["-m000", "actual"]).output().unwrap();
+    success(&output);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("inherited Windows ACLs"));
+    let actual = root.join("actual");
+    fs::write(actual.join("writable"), b"inherited access").unwrap();
+    fs::create_dir(actual.join("searchable")).unwrap();
+    let acl = |path: &Path| {
+        let output = Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "(Get-Acl -LiteralPath $env:GUTIL_MKDIR_ACL_PATH).Sddl",
+            ])
+            .env("GUTIL_MKDIR_ACL_PATH", path)
+            .output()
+            .unwrap();
+        success(&output);
+        assert_ne!(output.stdout.as_slice(), b"");
+        output.stdout
+    };
+    assert_eq!(acl(&actual), acl(&control));
+    let invalid = invocation(root)
+        .args(["-m888", "invalid"])
+        .output()
+        .unwrap();
+    assert_eq!(invalid.status.code(), Some(2));
+    assert!(!root.join("invalid").exists());
+}
