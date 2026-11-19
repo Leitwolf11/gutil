@@ -128,7 +128,9 @@ fn explicit_modes_warn_and_preserve_native_inherited_acls() {
                 "-NoProfile",
                 "-NonInteractive",
                 "-Command",
-                "(Get-Acl -LiteralPath $env:GUTIL_MKDIR_ACL_PATH).Sddl",
+                // Call .NET directly: an inherited PowerShell Core module path
+                // must not break Windows PowerShell's module autoloading.
+                "[System.IO.Directory]::GetAccessControl($env:GUTIL_MKDIR_ACL_PATH).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)",
             ])
             .env("GUTIL_MKDIR_ACL_PATH", path)
             .output()
