@@ -56,6 +56,18 @@ fn duplicates_binary_streams_appends_and_preserves_literal_file_names() {
         fs::read(root.join("first")).unwrap(),
         [bytes, b"end".to_vec()].concat()
     );
+    let before = fs::read(root.join("first")).unwrap();
+    success(&capture(
+        command(
+            root,
+            &["--append", "--ignore-interrupts", "--threads=2", "first"],
+        ),
+        b"long options",
+    ));
+    assert_eq!(
+        fs::read(root.join("first")).unwrap(),
+        [before, b"long options".to_vec()].concat()
+    );
     success(&capture(command(root, &["first"]), b"replacement"));
     assert_eq!(fs::read(root.join("first")).unwrap(), b"replacement");
 }
@@ -94,6 +106,7 @@ fn validates_options_before_creating_files_and_keeps_optional_modes_attached() {
     for args in [
         vec!["file", "--output-error=bad"],
         vec!["file", "-z"],
+        vec!["file", "--unknown"],
         vec!["file", "-j0"],
         vec!["file", "--threads"],
     ] {
@@ -356,4 +369,32 @@ fn accepts_non_utf8_paths_and_preserves_stdout_partial_lines() {
     reader.join().unwrap();
     success(&output);
     assert_eq!(result.unwrap().unwrap(), *b"partial");
+}
+
+#[test]
+fn the_last_output_error_option_controls_broken_pipe_handling() {
+    for (arguments, status) in [
+        (vec!["-p"], 0),
+        (vec!["--output-error=exit", "-p"], 0),
+        (vec!["-p", "--output-error=exit"], 1),
+    ] {
+        let fixture = tempfile::tempdir().unwrap();
+        let mut child = command(fixture.path(), &arguments)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        drop(child.stdout.take());
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(b"pipe policy").unwrap();
+        let output = wait(child);
+        assert_eq!(
+            output.status.code(),
+            Some(status),
+            "{arguments:?}: {output:?}"
+        );
+        assert_eq!(output.stderr.is_empty(), status == 0);
+        drop(stdin);
+    }
 }
