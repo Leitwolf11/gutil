@@ -61,6 +61,7 @@ pub(super) fn read(
         column: 0,
     };
     let mut pending = 0;
+    let byte_words = !locale.unicode && metrics & (WORDS | CHARS | WIDTH) == WORDS;
     loop {
         let length = match input.read(&mut buffer[pending..]) {
             Ok(0) => break,
@@ -74,7 +75,9 @@ pub(super) fn read(
             counter.counts.lines +=
                 memchr::memchr_iter(b'\n', &buffer[pending..end]).count() as u64;
         }
-        if metrics & !(LINES | BYTES) != 0 {
+        if byte_words {
+            counter.counts.words += byte_word_starts(&buffer[..end], &mut counter.word);
+        } else if metrics & !(LINES | BYTES) != 0 {
             if locale.unicode {
                 pending = counter.utf8(&buffer[..end]);
                 buffer.copy_within(end - pending..end, 0);
@@ -94,6 +97,23 @@ pub(super) fn read(
     }
     counter.counts.width = counter.counts.width.max(counter.column);
     Ok(counter.counts)
+}
+
+fn byte_word_starts(bytes: &[u8], in_word: &mut bool) -> u64 {
+    let Some((&first, rest)) = bytes.split_first() else {
+        return 0;
+    };
+    let space = |byte| matches!(byte, b' ' | b'\t'..=b'\r');
+    let initial = u64::from(!*in_word && !space(first));
+    // Interior pairs are independent. Only the first byte needs the state
+    // from the preceding read.
+    let interior = bytes
+        .iter()
+        .zip(rest)
+        .map(|(&left, &right)| u64::from(space(left) & !space(right)))
+        .sum::<u64>();
+    *in_word = !space(rest.last().copied().unwrap_or(first));
+    initial + interior
 }
 
 struct Counter {
