@@ -107,10 +107,19 @@ fn byte_word_starts(bytes: &[u8], in_word: &mut bool) -> u64 {
     let initial = u64::from(!*in_word && !space(first));
     // Interior pairs are independent. Only the first byte needs the state
     // from the preceding read.
-    let interior = bytes
-        .iter()
-        .zip(rest)
-        .map(|(&left, &right)| u64::from(space(left) & !space(right)))
+    // Each lane contributes at most one. Small chunks keep the vectorized
+    // reduction in byte lanes without overflowing their scalar sum.
+    let interior = bytes[..rest.len()]
+        .chunks(128)
+        .zip(rest.chunks(128))
+        .map(|(left, right)| {
+            u64::from(
+                left.iter()
+                    .zip(right)
+                    .map(|(&left, &right)| u8::from(space(left) & !space(right)))
+                    .sum::<u8>(),
+            )
+        })
         .sum::<u64>();
     *in_word = !space(rest.last().copied().unwrap_or(first));
     initial + interior
