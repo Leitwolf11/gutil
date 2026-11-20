@@ -801,7 +801,7 @@ dependencies = [
 
 [[package]]
 name = "gutil"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "ariadne",
  "atomicwrites",
@@ -809,6 +809,7 @@ dependencies = [
  "criterion",
  "data-encoding",
  "fs4",
+ "getrandom 0.4.3",
  "globset",
  "gutil-plugin-sdk",
  "ignore",

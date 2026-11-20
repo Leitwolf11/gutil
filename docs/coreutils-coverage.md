@@ -8,7 +8,7 @@ aliases and platform-dependent commands remain part of the target.
 [Upstream program list](https://github.com/coreutils/coreutils/blob/v9.12/build-aux/gen-lists-of-programs.sh)
 · [Installed-name transformation](https://github.com/coreutils/coreutils/blob/v9.12/src/local.mk#L374-L384)
 
-The default branch currently provides 33 of these 108 command names. The
+The default branch currently provides 34 of these 108 command names. The
 count follows merged code. The table records available commands and the
 remaining implementation work. Available commands implement the behavior
 listed in the command reference, and their presence does not imply complete
@@ -25,12 +25,13 @@ GNU option coverage or a demonstrated performance advantage.
 | Base encoding | `base32`, `base64` | Encoding and wrapped-decoding comparisons against GNU. |
 | Filesystem capacity | `df` | Mounted-filesystem comparisons against GNU. |
 | Directory creation | `mkdir` | GNU mode, umask, inherited setgid, default ACL, filesystem-state, and status comparisons. |
+| Temporary objects | `mktemp` | GNU template, suffix, temporary-directory precedence, dry-run, mode, and filesystem-state comparisons. |
 | Links and filesystem changes | `link`, `ln`, `rmdir`, `truncate`, `unlink` | GNU filesystem-state and exit-status comparisons, failure recovery, and release benchmarks. |
 | Shell and system utilities | `echo`, `false`, `nproc`, `printenv`, `sleep`, `true`, `yes` | Shell output, exit-status, and timing comparisons against GNU. |
 
 ## Remaining commands
 
-These groups contain the remaining 75 names. A pull request may implement
+These groups contain the remaining 74 names. A pull request may implement
 one command or a small coherent subset of a group. The grouping does not
 require a single pull request for every command in a row.
 
@@ -40,7 +41,7 @@ require a single pull request for every command in a row.
 | Text layout and fields | `cut`, `expand`, `fmt`, `fold`, `nl`, `paste`, `pr`, `ptx`, `tr`, `unexpand` |
 | Stream transformation and splitting | `csplit`, `dd`, `od`, `split`, `tac` |
 | File copying and removal | `cp`, `install`, `mv`, `rm`, `shred` |
-| File and directory creation | `mkfifo`, `mknod`, `mktemp`, `touch` |
+| File and directory creation | `mkfifo`, `mknod`, `touch` |
 | Metadata, ownership, and storage | `chgrp`, `chmod`, `chown`, `du`, `stat`, `sync` |
 | Additional checksums and encodings | `b2sum`, `basenc`, `cksum`, `sum` |
 | Arithmetic and formatted output | `expr`, `factor`, `numfmt`, `printf`, `seq`, `shuf` |

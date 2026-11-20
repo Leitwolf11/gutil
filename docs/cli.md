@@ -599,3 +599,53 @@ No active label assignment is silently claimed.
 
 Rich progress and diagnostics use stderr. Verbose output quotes and escapes
 paths; its text intentionally differs from GNU's localized verbose messages.
+
+
+## mktemp
+
+`gutil mktemp [OPTIONS] [TEMPLATE]` creates a temporary file or directory and
+prints its name. The final template component needs a run of at least three
+`X` characters. The final run is replaced by uniformly sampled alphanumeric
+characters from the operating system's random source. Earlier literal `X`
+characters remain unchanged. With no template, use `tmp.XXXXXXXXXX` under the
+temporary directory.
+
+| Option | Behavior |
+| --- | --- |
+| `-d`, `--directory` | Create a directory instead of a file. |
+| `-u`, `--dry-run` | Print an unused name without creating or reserving it. |
+| `-q`, `--quiet` | Suppress creation-failure diagnostics; failure status remains nonzero. |
+| `--suffix=TEXT` | Append a suffix; the supplied template must end in `X`. Otherwise infer the suffix after the final run of `X` characters. |
+| `-p DIR`, `--tmpdir[=DIR]` | Resolve a relative template under the directory. An omitted or empty directory selects `TMPDIR`, then the native temporary directory. |
+| `-t` | Legacy single-component templates; prefer `TMPDIR` over `-p DIR`. |
+| `-j`, `--jobs`, `--threads` | Limit runtime workers; each invocation reserves one name. |
+
+Creation runs in one asynchronous filesystem worker. Existing files,
+directories, and symbolic links are treated as collisions and remain intact.
+Only the final component is created; intermediate directories must exist.
+Without a temporary-directory option, an explicit template is used as written
+and may be absolute. Unix files use mode 600 and directories use mode 700,
+restricted by the process umask. Windows objects retain native inherited ACLs. Both `-t` and `--tmpdir`
+reject Windows drive-prefixed or rooted templates. Windows templates and
+suffixes cannot select alternate data streams, and a device handle cannot
+be reported as a reserved regular file.
+Unix output preserves non-UTF-8 path bytes; Windows output uses its Unicode
+text representation, replacing unpaired surrogates when necessary.
+
+Dry-run names are not reserved and can be claimed by another process before
+use. Dry runs do not create or delete filesystem objects. A missing parent can
+still yield an unused dry-run name. Prefer ordinary atomic creation when the
+name will be used for a file or directory.
+
+Exit status is 0 on success, 1 for creation, randomness, close, or output
+failure, and 2 for invalid arguments. Usage status 2 is gutil's convention;
+GNU uses 1. Quiet mode does not suppress invalid-argument or output errors.
+A reserved object remains present when closing or printing its name fails.
+On Unix, an unset or empty `TMPDIR` falls back to `/tmp`; Windows uses its
+native temporary-directory lookup. Rich progress goes to stderr.
+
+```sh
+gutil mktemp
+gutil mktemp -d -p ./build cache.XXXXXX
+gutil mktemp --suffix=.json artifact.XXXXXXXX
+```
