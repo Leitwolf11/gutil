@@ -12,6 +12,7 @@ mod ls;
 mod mkdir;
 mod mktemp;
 mod mutate;
+mod paste;
 mod paths;
 mod plugin;
 mod presentation;
@@ -30,7 +31,7 @@ use presentation::Presentation;
 use std::io::{self, BufWriter, IsTerminal, Write};
 use std::process::ExitCode;
 
-const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  base32, base64  Encode or decode data\n  df, duf  Report mounted filesystem usage\n  fd       Find files and directories\n  link, ln, unlink  Create links or remove file names\n  mkdir    Create directories\n  mktemp   Create temporary files or directories\n  rmdir    Remove empty directories\n  truncate  Adjust file sizes\n  basename  Print the final component of a path\n  dirname   Print the directory portion of a path\n  readlink  Print symbolic link targets\n  realpath  Print resolved paths\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  head     Print the beginning of files\n  tail     Print the end of files\n  tee      Copy standard input to files and standard output\n  wc       Count lines, words, and bytes\n  md5sum   Print or verify MD5 checksums\n  sha1sum  Print or verify SHA-1 checksums\n  sha224sum, sha256sum, sha384sum, sha512sum  Print or verify SHA-2 checksums\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n  echo, yes          Write text\n  false, true        Return a fixed exit status\n  nproc, printenv    Report processor or environment information\n  sleep              Pause for a duration\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
+const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  base32, base64  Encode or decode data\n  df, duf  Report mounted filesystem usage\n  fd       Find files and directories\n  link, ln, unlink  Create links or remove file names\n  mkdir    Create directories\n  mktemp   Create temporary files or directories\n  rmdir    Remove empty directories\n  truncate  Adjust file sizes\n  basename  Print the final component of a path\n  dirname   Print the directory portion of a path\n  readlink  Print symbolic link targets\n  realpath  Print resolved paths\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  paste    Merge corresponding records from files\n  head     Print the beginning of files\n  tail     Print the end of files\n  tee      Copy standard input to files and standard output\n  wc       Count lines, words, and bytes\n  md5sum   Print or verify MD5 checksums\n  sha1sum  Print or verify SHA-1 checksums\n  sha224sum, sha256sum, sha384sum, sha512sum  Print or verify SHA-2 checksums\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n  echo, yes          Write text\n  false, true        Return a fixed exit status\n  nproc, printenv    Report processor or environment information\n  sleep              Pause for a duration\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
 
 fn main() -> ExitCode {
     // Discard argv[0] and preserve non-UTF-8 filesystem operands.
@@ -68,6 +69,7 @@ enum Command {
     Mkdir,
     Mktemp,
     Mutate(mutate::Command),
+    Paste,
     Path(paths::Command),
     Plugin,
     Pwd,
@@ -90,6 +92,7 @@ impl Command {
             Some("realpath") => Self::Path(paths::Command::Realpath),
             Some("cache") => Self::Cache,
             Some("cat") => Self::Cat,
+            Some("paste") => Self::Paste,
             Some("df") => Self::Disk(disk::Command::Df),
             Some("duf") => Self::Disk(disk::Command::Duf),
             Some("fd") => Self::Fd,
@@ -187,6 +190,7 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         Command::Plugin => return plugin::run(args, ui),
         Command::Mkdir => return mkdir::run(args, *job_count, ui),
         Command::Mktemp => return mktemp::run(args, *job_count, ui),
+        Command::Paste => return paste::run(args, *job_count, ui),
         Command::Mutate(command) => return mutate::run(command, args, *job_count, ui),
         Command::Path(command) => return paths::run(command, args, *job_count, ui),
         Command::Checksum(algorithm) => return checksum::run(algorithm, args, *job_count, ui),
@@ -288,6 +292,7 @@ fn direct_help_or_version(command: Command, option: Option<&str>) -> bool {
             | Command::Ls
             | Command::Mkdir
             | Command::Mktemp
+            | Command::Paste
             | Command::Mutate(_)
             | Command::Path(_)
             | Command::Plugin
