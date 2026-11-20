@@ -44,10 +44,10 @@ def measure(options):
                     order = list(commands)
                     generator.shuffle(order)
                     for label in order:
+                        argv = commands[label] + args
                         started = time.perf_counter_ns()
                         # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
-                        result = subprocess.run(  # nosec B603 -- Validated executable, shell=False.
-                            commands[label] + args,
+                        result = subprocess.run(argv,  # nosec B603 -- Validated executable, shell=False.
                             stdin=slave if terminal else subprocess.DEVNULL,
                             capture_output=True, env=environment, check=False, shell=False,
                         )
