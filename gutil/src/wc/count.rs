@@ -100,9 +100,9 @@ pub(super) fn read(
 }
 
 fn byte_word_starts(bytes: &[u8], in_word: &mut bool) -> u64 {
-    let Some((&first, rest)) = bytes.split_first() else {
-        return 0;
-    };
+    // The read loop calls this only after a positive-length read.
+    let first = bytes[0];
+    let rest = &bytes[1..];
     let space = |byte| matches!(byte, b' ' | b'\t'..=b'\r');
     let initial = u64::from(!*in_word && !space(first));
     // Interior pairs are independent. Only the first byte needs the state
