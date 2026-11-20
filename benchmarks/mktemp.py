@@ -72,6 +72,8 @@ def verify(result, root, kind, default):
 
 def benchmark(options, root):
     binaries = {"gutil": executable(options.gutil), "gnu": executable(options.gnu)}
+    if options.baseline is not None:
+        binaries["baseline"] = executable(options.baseline)
     cases = [
         ("file", ["object.XXXXXXXXXX"], "file", False),
         ("directory", ["-d", "object.XXXXXXXXXX"], "directory", False),
@@ -88,6 +90,8 @@ def benchmark(options, root):
             "gutil": [str(binaries["gutil"]), "--no-config", "--progress=never", "--jobs=1", "mktemp", *flags],
             "gnu": [str(binaries["gnu"]), *flags],
         }
+        if "baseline" in binaries:
+            commands["baseline"] = [str(binaries["baseline"]), *commands["gutil"][1:]]
         samples = {label: [] for label in commands}
         for round_index in range(options.warmup + options.rounds):
             order = list(commands)
@@ -106,6 +110,12 @@ def benchmark(options, root):
             "milliseconds": {label: summarize(values) for label, values in samples.items()},
             "paired_reduction_percent": summarize(reductions), "samples_ms": samples,
         }
+        if "baseline" in samples:
+            baseline_reductions = [
+                100 * (baseline - candidate) / baseline
+                for candidate, baseline in zip(samples["gutil"], samples["baseline"], strict=True)
+            ]
+            results[name]["paired_baseline_reduction_percent"] = summarize(baseline_reductions)
     return {
         "measured_at_utc": datetime.datetime.now(datetime.UTC).isoformat(),
         "machine": platform.platform(), "cpu": platform.processor(),
@@ -120,6 +130,7 @@ def benchmark(options, root):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("gutil", type=Path)
+    parser.add_argument("--baseline", type=Path, help="Optional second gutil release binary")
     parser.add_argument("--gnu", type=Path, default=Path("/usr/bin/mktemp"))
     parser.add_argument("--rounds", type=int, default=30)
     parser.add_argument("--warmup", type=int, default=4)
