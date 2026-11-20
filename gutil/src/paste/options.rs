@@ -48,6 +48,7 @@ impl Options {
             workers,
         };
         let mut flags = true;
+        let mut delimiter_list = None;
         let posix = std::env::var_os("POSIXLY_CORRECT").is_some();
         while let Some(arg) = args.next() {
             let bytes = arg.as_encoded_bytes();
@@ -65,7 +66,7 @@ impl Options {
                 continue;
             }
             if let Some(long) = bytes.strip_prefix(b"--") {
-                if let Some(info) = options.long(&arg, long, &mut args)? {
+                if let Some(info) = options.long(&arg, long, &mut args, &mut delimiter_list)? {
                     return Ok(info);
                 }
             } else {
@@ -75,8 +76,10 @@ impl Options {
                         b's' => options.serial = true,
                         b'z' => options.terminator = 0,
                         b'd' => {
-                            options
-                                .set_delimiters((!rest.is_empty()).then_some(rest), &mut args)?;
+                            delimiter_list = Some(delimiter_value(
+                                (!rest.is_empty()).then_some(rest),
+                                &mut args,
+                            )?);
                             break;
                         }
                         b'j' => {
@@ -91,6 +94,9 @@ impl Options {
         if options.paths.is_empty() {
             options.paths.push(PathBuf::from("-"));
         }
+        if let Some(list) = delimiter_list {
+            options.delimiters = parse_delimiters(&list, utf8_locale())?;
+        }
         Ok(Request::Run(options))
     }
 
@@ -99,6 +105,7 @@ impl Options {
         argument: &OsStr,
         token: &[u8],
         args: &mut impl Iterator<Item = OsString>,
+        delimiter_list: &mut Option<Vec<u8>>,
     ) -> Result<Option<Request>, Error> {
         let split = token.iter().position(|&byte| byte == b'=');
         let (prefix, attached) = split.map_or((token, None), |index| {
@@ -111,7 +118,7 @@ impl Options {
             .find(|name| !prefix.is_empty() && name.as_bytes().starts_with(prefix))
             .ok_or_else(invalid)?;
         match (name, attached) {
-            ("delimiters", value) => self.set_delimiters(value, args)?,
+            ("delimiters", value) => *delimiter_list = Some(delimiter_value(value, args)?),
             ("serial", None) => self.serial = true,
             ("zero-terminated", None) => self.terminator = 0,
             ("help", None) => return Ok(Some(Request::Help)),
@@ -121,24 +128,21 @@ impl Options {
         Ok(None)
     }
 
-    fn set_delimiters(
-        &mut self,
-        attached: Option<&[u8]>,
-        args: &mut impl Iterator<Item = OsString>,
-    ) -> Result<(), Error> {
-        let separate;
-        let list = if let Some(attached) = attached {
-            attached
-        } else {
-            separate = args.next().ok_or(Error::MissingDelimiters)?;
-            separate.as_encoded_bytes()
-        };
-        self.delimiters = parse_delimiters(list, utf8_locale())?;
-        Ok(())
-    }
-
     pub(super) fn delimiter(&self, index: usize) -> &[u8] {
         &self.delimiters[index % self.delimiters.len()]
+    }
+}
+
+fn delimiter_value(
+    attached: Option<&[u8]>,
+    args: &mut impl Iterator<Item = OsString>,
+) -> Result<Vec<u8>, Error> {
+    if let Some(attached) = attached {
+        Ok(attached.to_vec())
+    } else {
+        args.next()
+            .map(OsString::into_encoded_bytes)
+            .ok_or(Error::MissingDelimiters)
     }
 }
 

@@ -228,6 +228,24 @@ fn matches_gnu_for_ragged_columns_and_shared_input() {
 }
 
 #[test]
+fn validates_only_the_effective_delimiter_list() {
+    let fixture = tempfile::tempdir().unwrap();
+    let path = fixture.path();
+    verify(
+        run(
+            &mut command(path),
+            &["-d", "x\\", "--delimiters=:", "-", "-"],
+            b"a\nb",
+        ),
+        0,
+        b"a:b\n",
+    );
+    let help = run(&mut command(path), &["-d", "x\\", "--help"], b"");
+    assert!(help.status.success(), "{help:?}");
+    assert!(help.stdout.starts_with(b"Usage: gutil paste "));
+}
+
+#[test]
 fn writes_progress_to_stderr_and_reports_closed_output() {
     let fixture = tempfile::tempdir().unwrap();
     let path = fixture.path();
