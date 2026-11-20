@@ -119,9 +119,7 @@ fn parse(command: Command, args: impl Iterator<Item = OsString>) -> Result<Parse
             if std::env::var_os("POSIXLY_CORRECT").is_some() {
                 return Err(Error::Operand(argument));
             }
-            if operand.is_none() {
-                operand = Some(argument);
-            }
+            operand.get_or_insert(argument);
         }
     }
     if let Some(argument) = operand {
@@ -194,7 +192,11 @@ fn unix_value(system: &nix::sys::utsname::UtsName, field: Field) -> Cow<'_, OsSt
         Field::Machine => system.machine(),
         Field::Processor | Field::Platform => OsStr::new("unknown"),
         Field::Os if cfg!(target_os = "linux") => OsStr::new("GNU/Linux"),
-        Field::Os if cfg!(target_os = "android") => OsStr::new("Android"),
+        #[cfg(target_os = "android")]
+        Field::Os => OsStr::new("Android"),
+        #[cfg(target_os = "android")]
+        Field::Kernel => system.sysname(),
+        #[cfg(not(target_os = "android"))]
         Field::Kernel | Field::Os => system.sysname(),
     })
 }

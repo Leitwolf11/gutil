@@ -36,6 +36,7 @@ fn selects_fields_in_canonical_order_and_removes_duplicates() {
 fn prints_optional_fields_and_labeled_output() {
     assert_eq!(success("uname", &["-ip"]), b"unknown unknown\n");
     let plain = success("uname", &["-ai"]);
+    assert_eq!(success("uname", &["--all"]), plain);
     let labeled = success("uname", &["-Ap", "-a"]);
     assert_eq!(success("uname", &["--all-labeled"]), labeled);
     let mut values = Vec::new();
@@ -79,6 +80,15 @@ fn handles_help_version_and_invalid_arguments() {
             assert!(!output.stderr.is_empty(), "{output:?}");
         }
     }
+    assert!(success("uname", &["extra", "--help"]).starts_with(b"Usage: gutil uname "));
+    let posix = Command::new(env!("CARGO_BIN_EXE_gutil"))
+        .env("LC_ALL", "C")
+        .env("POSIXLY_CORRECT", "1")
+        .args(["--no-config", "uname", "extra", "--help"])
+        .output()
+        .unwrap();
+    assert_eq!(posix.status.code(), Some(1));
+    assert!(posix.stdout.is_empty(), "{posix:?}");
     assert_eq!(gutil("arch", &["-m"]).status.code(), Some(1));
     assert_eq!(gutil("uname", &["--a"]).status.code(), Some(1));
 }
