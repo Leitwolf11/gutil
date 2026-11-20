@@ -122,7 +122,8 @@ def benchmark(options, root):
         "affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
         "fixture_parent": str(root.parent),
         "rounds": options.rounds, "warmup": options.warmup, "seed": 42, "umask": "022",
-        "binaries": {label: {"path": str(binary), "sha256": hashlib.sha256(binary.read_bytes()).hexdigest()} for label, binary in binaries.items()},
+        "binary_size_method": "Filesystem logical length from stat().st_size",
+        "binaries": {label: {"path": str(binary), "sha256": hashlib.sha256(binary.read_bytes()).hexdigest(), "size_bytes": binary.stat().st_size} for label, binary in binaries.items()},
         "results": results,
     }
 

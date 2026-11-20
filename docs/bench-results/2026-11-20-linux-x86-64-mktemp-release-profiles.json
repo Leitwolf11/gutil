@@ -13,15 +13,18 @@
   "binaries": {
     "gutil": {
       "path": "/home/hasan/Projeler/gutil/target/experiments/mktemp-thin",
-      "sha256": "8e50d4d820d989e4282b53cd6bfcaf8011511e208c0adbe98dd2c56e72075516"
+      "sha256": "8e50d4d820d989e4282b53cd6bfcaf8011511e208c0adbe98dd2c56e72075516",
+      "size_bytes": 13566536
     },
     "gnu": {
       "path": "/usr/bin/mktemp",
-      "sha256": "b5fffc663c5de7b46a929d6e2d99636720ef8e478e496b0a62eb4f7b52a5d055"
+      "sha256": "b5fffc663c5de7b46a929d6e2d99636720ef8e478e496b0a62eb4f7b52a5d055",
+      "size_bytes": 47416
     },
     "baseline": {
       "path": "/home/hasan/Projeler/gutil/target/experiments/mktemp-default",
-      "sha256": "51e3c82c24f7e41fb41c7985f5ab08003c8e915c653df8cac2184240a406f943"
+      "sha256": "51e3c82c24f7e41fb41c7985f5ab08003c8e915c653df8cac2184240a406f943",
+      "size_bytes": 16659656
     }
   },
   "results": {
@@ -1739,5 +1742,6 @@
       "codegen-units": 1
     },
     "baseline": {}
-  }
+  },
+  "binary_size_method": "Filesystem logical length from stat().st_size"
 }
