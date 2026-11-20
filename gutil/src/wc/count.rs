@@ -61,7 +61,7 @@ pub(super) fn read(
         column: 0,
     };
     let mut pending = 0;
-    let byte_words = !locale.unicode && metrics & (WORDS | CHARS | WIDTH) == WORDS;
+    let byte_counts = metrics & WIDTH == 0 && metrics & (WORDS | CHARS) != 0;
     loop {
         let length = match input.read(&mut buffer[pending..]) {
             Ok(0) => break,
@@ -75,8 +75,13 @@ pub(super) fn read(
             counter.counts.lines +=
                 memchr::memchr_iter(b'\n', &buffer[pending..end]).count() as u64;
         }
-        if byte_words {
-            counter.counts.words += byte_word_starts(&buffer[..end], &mut counter.word);
+        if byte_counts && (!locale.unicode || (pending == 0 && buffer[..end].is_ascii())) {
+            if metrics & WORDS != 0 {
+                counter.counts.words += byte_word_starts(&buffer[..end], &mut counter.word);
+            }
+            if metrics & CHARS != 0 {
+                counter.counts.chars += length as u64;
+            }
         } else if metrics & !(LINES | BYTES) != 0 {
             if locale.unicode {
                 pending = counter.utf8(&buffer[..end]);
