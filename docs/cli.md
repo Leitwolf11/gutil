@@ -649,3 +649,23 @@ gutil mktemp
 gutil mktemp -d -p ./build cache.XXXXXX
 gutil mktemp --suffix=.json artifact.XXXXXXXX
 ```
+
+## uniq
+
+`gutil uniq [OPTIONS] [INPUT [OUTPUT]]` keeps the first record in each run of
+adjacent matches. Omitted paths and `-` select the standard streams.
+`-c` prints a count, `-d` keeps repeated groups, and `-u` keeps groups
+of one. `-D` or `--all-repeated[=METHOD]` streams every repeated record.
+The optional method is `none`, `prepend`, or `separate`.
+`--group[=METHOD]` prints every record with `separate`, `prepend`,
+`append`, or `both` placement of empty separators.
+
+Comparison options are `-i` for ASCII case folding, `-f N` to skip fields,
+`-s N` to skip characters after the fields, and `-w N` to compare at most
+N characters. UTF-8 locales recognize multibyte characters for skipping
+and limiting. The C locale uses bytes. `-z` uses NUL record boundaries.
+The command preserves the original bytes and terminates the final record.
+
+Unlike GNU uniq, gutil rejects an input and output referring to the same
+regular file before truncation, including hard-link aliases. The optional
+progress stream reports records on stderr.
