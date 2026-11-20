@@ -8,7 +8,7 @@ aliases and platform-dependent commands remain part of the target.
 [Upstream program list](https://github.com/coreutils/coreutils/blob/v9.12/build-aux/gen-lists-of-programs.sh)
 · [Installed-name transformation](https://github.com/coreutils/coreutils/blob/v9.12/src/local.mk#L374-L384)
 
-The default branch currently provides 34 of these 108 command names. The
+The default branch currently provides 36 of these 108 command names. The
 count follows merged code. The table records available commands and the
 remaining implementation work. Available commands implement the behavior
 listed in the command reference, and their presence does not imply complete
@@ -28,10 +28,11 @@ GNU option coverage or a demonstrated performance advantage.
 | Temporary objects | `mktemp` | GNU template, suffix, temporary-directory precedence, dry-run, mode, and filesystem-state comparisons. |
 | Links and filesystem changes | `link`, `ln`, `rmdir`, `truncate`, `unlink` | GNU filesystem-state and exit-status comparisons, failure recovery, and release benchmarks. |
 | Shell and system utilities | `echo`, `false`, `nproc`, `printenv`, `sleep`, `true`, `yes` | Shell output, exit-status, and timing comparisons against GNU. |
+| System identity | `arch`, `uname` | Native host information and GNU Linux command comparisons. |
 
 ## Remaining commands
 
-These groups contain the remaining 74 names. A pull request may implement
+These groups contain the remaining 72 names. A pull request may implement
 one command or a small coherent subset of a group. The grouping does not
 require a single pull request for every command in a row.
 
@@ -47,7 +48,7 @@ require a single pull request for every command in a row.
 | Arithmetic and formatted output | `expr`, `factor`, `numfmt`, `printf`, `seq`, `shuf` |
 | Process and environment control | `[`, `chroot`, `env`, `kill`, `nice`, `nohup`, `pathchk`, `stdbuf`, `test`, `timeout` |
 | Identity and login information | `groups`, `hostid`, `id`, `logname`, `pinky`, `users`, `who`, `whoami` |
-| System, time, and terminal information | `arch`, `date`, `hostname`, `stty`, `tty`, `uname`, `uptime` |
+| System, time, and terminal information | `date`, `hostname`, `stty`, `tty`, `uptime` |
 | Security contexts | `chcon`, `runcon` |
 | Listing aliases and color definitions | `dir`, `dircolors`, `vdir` |
 
