@@ -4,11 +4,14 @@ use std::io::{self, BufWriter, Write};
 
 use crate::presentation::Presentation;
 
+mod identity;
 mod output;
 mod system;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Command {
+    Arch,
+    Uname,
     True,
     False,
     Echo,
@@ -21,6 +24,8 @@ pub(crate) enum Command {
 impl Command {
     pub(crate) fn parse(name: &OsStr) -> Option<Self> {
         match name.as_encoded_bytes() {
+            b"arch" => Some(Self::Arch),
+            b"uname" => Some(Self::Uname),
             b"true" => Some(Self::True),
             b"false" => Some(Self::False),
             b"echo" => Some(Self::Echo),
@@ -34,6 +39,8 @@ impl Command {
 
     const fn definition(self) -> (&'static str, &'static str) {
         match self {
+            Self::Arch => ("arch", "[OPTION]...\n\nPrint the machine hardware name."),
+            Self::Uname => ("uname", "[OPTION]...\n\nPrint system information. The default is -s.\n\n  -a, --all                Print all known fields\n  -A, --all-labeled        Print all known fields with labels\n  -s, --kernel-name        Print the kernel name\n  -n, --nodename           Print the network node name\n  -r, --kernel-release     Print the kernel release\n  -v, --kernel-version     Print the kernel version\n  -m, --machine            Print the machine hardware name\n  -p, --processor          Print the processor type\n  -i, --hardware-platform  Print the hardware platform\n  -o, --operating-system   Print the operating system"),
             Self::True => ("true", "[ARGUMENTS]...\n\nReturn success."),
             Self::False => ("false", "[ARGUMENTS]...\n\nReturn failure."),
             Self::Echo => ("echo", "[-n] [-e|-E] [STRING]...\n\nWrite arguments separated by spaces.\n\n  -n  Omit the final newline\n  -e  Interpret backslash escapes\n  -E  Print backslashes literally"),
@@ -99,6 +106,7 @@ pub(crate) fn run(
     let mut args = args.peekable();
     let mut output = BufWriter::new(io::stdout().lock());
     let result = match command {
+        Command::Arch | Command::Uname => identity::run(command, args, &mut output),
         Command::Echo => output::echo(args, &mut output).map(|()| 0),
         Command::Yes => output::yes(args, &mut output).map(|()| 0),
         Command::Printenv => output::printenv(args, &mut output),

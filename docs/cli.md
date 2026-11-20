@@ -649,3 +649,20 @@ gutil mktemp
 gutil mktemp -d -p ./build cache.XXXXXX
 gutil mktemp --suffix=.json artifact.XXXXXXXX
 ```
+
+## arch and uname
+
+`gutil arch` prints the machine hardware name, equivalent to `gutil uname -m`.
+`gutil uname` defaults to the kernel name. Use `-s`, `-n`, `-r`, `-v`, `-m`,
+`-p`, `-i`, and `-o` for kernel name, node name, kernel release, kernel
+version, machine, processor, hardware platform, and operating system. Selected
+fields appear in this order even when the options are repeated or reordered.
+
+`-a` and `--all` print the known fields on one line. `-A` and
+`--all-labeled` print one labeled field per line. The nonportable processor
+and hardware platform fields are currently reported as `unknown` when
+requested explicitly and omitted in the combined modes.
+
+Unix uses the running kernel's system identification fields. On Windows,
+the kernel name is `Windows_NT`, the release is the OS version, and the
+kernel version field is the build number. The OS label is `Windows`.
