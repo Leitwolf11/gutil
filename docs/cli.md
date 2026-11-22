@@ -757,3 +757,23 @@ Operands are processed in order. Each operand starts a new wrapping
 position, and a missing final newline stays missing. Errors in one input
 do not prevent later inputs from being read. Progress, when enabled, is
 written to stderr.
+
+## tsort
+
+`gutil tsort [FILE]` reads pairs of names and writes a topological order.
+Each pair places its first name before its second. A pair of identical
+names declares one node. Spaces, tabs, and newlines separate names.
+Omit the file or pass `-` to read standard input. An odd number of names
+produces an error before any ordered output.
+
+The initial set of available names uses byte order. When new names become
+available through the same node, the command processes its most recent
+relations first. As in GNU tsort, an embedded NUL ends a name. Other name
+bytes pass through unchanged, even in a UTF-8 locale. The historical
+`-w` option is accepted for compatibility.
+
+For cyclic input, gutil reports cycles on stderr, removes enough
+relations to finish the ordering, and exits with status 1. Its selection
+of relations to remove uses depth-first traversal, so cyclic inputs can
+produce a different order and diagnostics from GNU tsort. Progress
+reports bytes read and goes to stderr.
