@@ -36,8 +36,13 @@ fn execute(command: &mut Command, input: &[u8]) -> Output {
 }
 
 fn check(output: Output, status: i32, bytes: &[u8]) {
-    assert_eq!(output.status.code(), Some(status), "{:?}", output.stderr);
-    assert_eq!(output.stdout, bytes);
+    let Output {
+        status: actual,
+        stderr,
+        stdout,
+    } = output;
+    assert_eq!(actual.code(), Some(status), "{stderr:?}");
+    assert_eq!(stdout, bytes);
 }
 
 #[test]

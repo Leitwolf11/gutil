@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare gutil and GNU expand with verified interleaved measurements."""
+"""Compare gutil and GNU tab conversion with verified interleaved measurements."""
 
 import argparse
 import hashlib
@@ -20,19 +20,31 @@ def executable(path):
     return resolved
 
 
-def measure(binaries, source, destination):
+def scenarios(utility):
+    if utility == "unexpand":
+        plain = (b"        alpha   beta       gamma   delta                 end" * 4) + b"\n"
+        mixed = ("        café   日本語        🧪          naïve      espaços" * 4).encode() + b"\n"
+        return [
+            ("ascii-leading", "C", [], plain),
+            ("ascii-all", "C", ["-a"], plain),
+            ("ascii-custom", "C", ["-t3,11,+5"], plain),
+            ("utf8-all", "C.UTF-8", ["-a"], mixed),
+        ]
     plain = (b"\t\t alpha\tbeta gamma\tdelta\tend " * 5).rstrip() + b"\n"
     mixed = ("\t café\t日本語\t🧪 naïve\t espaços " * 5).rstrip().encode() + b"\n"
-    cases = [
+    return [
         ("ascii-default", "C", [], plain),
         ("ascii-initial", "C", ["-i"], plain),
         ("ascii-custom", "C", ["-t3,11,+5"], plain),
         ("utf8-columns", "C.UTF-8", [], mixed),
     ]
+
+
+def measure(utility, binaries, source, destination):
     randomizer = random.Random(477)  # nosec B311 -- Reproducible measurement order only.
     rounds, warmup = 12, 4
     results = {}
-    for name, locale, flags, record in cases:
+    for name, locale, flags, record in scenarios(utility):
         source.write_bytes(record * (16 * 1024 * 1024 // len(record)))
         environment = dict(os.environ, LC_ALL=locale, TZ="UTC")
         environment.pop("POSIXLY_CORRECT", None)
@@ -44,7 +56,7 @@ def measure(binaries, source, destination):
             for label in order:
                 command = [str(binaries[label])]
                 if label != "gnu":
-                    command.extend(["--no-config", "--progress=never", "--jobs=1", "expand"])
+                    command.extend(["--no-config", "--progress=never", "--jobs=1", utility])
                 command.extend([*flags, str(source)])
                 with destination.open("wb") as output:
                     started = time.perf_counter_ns()
@@ -85,12 +97,14 @@ def measure(binaries, source, destination):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("candidate", type=Path)
-    parser.add_argument("--gnu", type=Path, default=Path("/usr/bin/expand"))
+    parser.add_argument("--utility", choices=("expand", "unexpand"), default="expand")
+    parser.add_argument("--gnu", type=Path)
     options = parser.parse_args()
-    binaries = {"candidate": executable(options.candidate), "gnu": executable(options.gnu)}
+    reference = options.gnu or Path("/usr/bin") / options.utility
+    binaries = {"candidate": executable(options.candidate), "gnu": executable(reference)}
     with tempfile.TemporaryDirectory(prefix="gutil-expand-") as directory:
         root = Path(directory)
-        print(json.dumps(measure(binaries, root / "input", root / "output"), indent=2))
+        print(json.dumps(measure(options.utility, binaries, root / "input", root / "output"), indent=2))
 
 
 if __name__ == "__main__":

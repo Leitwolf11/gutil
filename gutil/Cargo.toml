@@ -1,6 +1,6 @@
 [package]
 name = "gutil"
-version = "0.22.0"
+version = "0.24.0"
 edition.workspace = true
 description = "A single-binary, cross-platform reimplementation of GNU coreutils"
 license.workspace = true
