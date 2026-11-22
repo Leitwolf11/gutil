@@ -17,10 +17,18 @@ pub(super) struct Folder<'a> {
     blank_end: Option<usize>,
 }
 
-#[derive(Default)]
 struct Cursor {
     column: usize,
     last_width: usize,
+}
+
+impl Default for Cursor {
+    fn default() -> Self {
+        Self {
+            column: 0,
+            last_width: 1,
+        }
+    }
 }
 
 impl Cursor {
@@ -29,12 +37,14 @@ impl Cursor {
             self.column = self.column.saturating_add(unit.bytes);
         } else {
             match unit.character {
-                Some('\x08') if self.column != 0 => {
-                    self.column = self.column.wrapping_sub(self.last_width);
+                Some('\x08') => {
+                    self.column = self.column.saturating_sub(self.last_width);
                 }
-                Some('\x08') => {}
-                Some('\r') => self.column = 0,
-                Some('\t') => self.column = self.column.saturating_add(8 - self.column % 8),
+                Some('\r') => *self = Self::default(),
+                Some('\t') => {
+                    self.column = self.column.saturating_add(8 - self.column % 8);
+                    self.last_width = 1;
+                }
                 character => {
                     let width = if count == Count::Characters {
                         1
@@ -176,7 +186,7 @@ impl<'a> Folder<'a> {
     }
 
     fn reset(&mut self) {
-        self.cursor.column = 0;
+        self.cursor = Cursor::default();
         self.pending.clear();
         self.blank_end = None;
         self.emitted = false;
@@ -249,7 +259,7 @@ impl<'a> Folder<'a> {
             if self.cursor.column > self.options.width && self.emitted {
                 output.write_all(&bytes[start..offset])?;
                 output.write_all(b"\n")?;
-                self.cursor.column = 0;
+                self.cursor = Cursor::default();
                 self.cursor.advance(self.options.count, unit);
                 start = offset;
             }
@@ -284,7 +294,7 @@ impl<'a> Folder<'a> {
             self.cursor.advance(self.options.count, unit);
             while self.cursor.column > self.options.width && !self.pending.is_empty() {
                 self.write_wrap(output)?;
-                self.cursor.column = 0;
+                self.cursor = Cursor::default();
                 self.rescan_pending();
                 self.cursor.advance(self.options.count, unit);
             }
@@ -324,4 +334,43 @@ impl<'a> Folder<'a> {
             offset += unit.bytes;
         }
     }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+#[test]
+fn retries_interruptions_and_preserves_bytes_before_a_read_error() {
+    use crate::jobs;
+
+    struct InterruptedInput(u8);
+
+    impl Read for InterruptedInput {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            self.0 += 1;
+            match self.0 {
+                1 => Err(io::ErrorKind::Interrupted.into()),
+                2 => b"abc".as_slice().read(buffer),
+                _ => Err(io::ErrorKind::InvalidData.into()),
+            }
+        }
+    }
+
+    let options = Options {
+        count: Count::Columns,
+        width: 80,
+        spaces: false,
+        paths: Vec::new(),
+        workers: jobs::Count::DEFAULT_AUTO_LIMIT,
+    };
+    let mut output = Vec::new();
+    let result = Folder::new(&options)
+        .copy(
+            &mut InterruptedInput(0),
+            &mut output,
+            &mut None,
+            &mut Vec::new(),
+        )
+        .unwrap();
+    assert_eq!(result.unwrap().kind(), io::ErrorKind::InvalidData);
+    assert_eq!(output, b"abc");
 }

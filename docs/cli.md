@@ -726,7 +726,9 @@ blanks. Missing file operands and `-` select standard input.
 
 By default, wrapping tracks display columns. Tabs advance to eight-column
 stops, carriage returns reset the column, and backspaces move back by the
-last character's width. `-c` uses a width of one for ordinary characters.
+last character's width. The backspace width starts at one on each line
+and resets to one after a tab or carriage return. `-c` uses a width of one
+for ordinary characters.
 `-b` counts bytes and ignores those cursor controls. UTF-8 locales keep
 complete scalars together, including in byte mode. Malformed bytes are
 preserved. Other locale encodings use the single-byte path. Unicode column

@@ -171,6 +171,7 @@ fn validates_options_and_keeps_progress_on_stderr() {
         &["-w0"],
         &["--width=5k"],
         &["--bytes=yes"],
+        &["--unknown"],
         &["-z"],
     ] {
         expect(run(&mut command(path, "C"), flags, b"input"), 1, b"");
@@ -185,7 +186,7 @@ fn validates_options_and_keeps_progress_on_stderr() {
     progress
         .current_dir(path)
         .args(["--no-config", "--progress=always", "--color=never", "fold"]);
-    let result = run(&mut progress, &["-sj2", "-w2"], b"abcd");
+    let result = run(&mut progress, &["--spaces", "-bj2", "-w2"], b"abcd");
     assert!(String::from_utf8_lossy(&result.stderr).contains("bytes"));
     expect(result, 0, b"ab\ncd");
 }
@@ -235,4 +236,39 @@ fn matches_gnu_for_mixed_and_binary_input_when_configured() {
             );
         }
     }
+}
+
+#[test]
+fn backspaces_follow_tab_stops_and_reset_between_records() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    let data = "\t\x08X\n界\n\t\x08X\n界\t\x08XX\n\r\x08a\n";
+    let expected = "\t\x08X\n界\n\t\x08X\n界\t\x08X\nX\n\r\x08a\n";
+    for flags in [&["-w8"][..], &["-w8", "-c"]] {
+        expect(
+            run(&mut command(path, "C.UTF-8"), flags, data.as_bytes()),
+            0,
+            expected.as_bytes(),
+        );
+    }
+}
+
+#[test]
+fn rescans_a_pending_malformed_unit_and_counts_soft_hyphens() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    expect(
+        run(&mut command(path, "C.UTF-8"), &["-sw3"], b"a \xffbxy"),
+        0,
+        b"a \n\xffbxy",
+    );
+    expect(
+        run(
+            &mut command(path, "C.UTF-8"),
+            &["-w2"],
+            "\u{ad}abc".as_bytes(),
+        ),
+        0,
+        "\u{ad}a\nbc".as_bytes(),
+    );
 }
