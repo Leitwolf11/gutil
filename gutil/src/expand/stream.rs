@@ -195,3 +195,42 @@ fn partial_scalar(bytes: &[u8]) -> usize {
         0
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+#[test]
+fn retries_an_interrupted_read_before_reporting_the_next_error() {
+    use super::options::Request;
+    use crate::jobs::Count;
+
+    struct FailingReader(bool);
+
+    impl Read for FailingReader {
+        fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
+            if self.0 {
+                Err(io::ErrorKind::InvalidData.into())
+            } else {
+                self.0 = true;
+                Err(io::ErrorKind::Interrupted.into())
+            }
+        }
+    }
+
+    let request = Request::parse(std::iter::empty(), Count::DEFAULT_AUTO_LIMIT).unwrap();
+    let Request::Expand(options) = request else {
+        panic!("default options must request expansion");
+    };
+    let mut output = Vec::new();
+    let error = Expander::new(&options)
+        .copy(
+            &mut FailingReader(false),
+            &mut output,
+            &mut [0; 8],
+            &mut None,
+            &mut Vec::new(),
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(output, b"");
+}

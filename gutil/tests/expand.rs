@@ -236,3 +236,61 @@ fn matches_gnu_on_tabs_binary_data_and_unicode_when_configured() {
         }
     }
 }
+
+#[test]
+fn preserves_utf8_units_split_at_any_buffer_boundary() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    for (prefix_len, scalar, spaces) in [(65_538, "é", 5), (65_536, "🧪", 6)] {
+        let mut data = vec![b'x'; prefix_len];
+        data.extend_from_slice(scalar.as_bytes());
+        let mut expected = data.clone();
+        expected.extend(std::iter::repeat_n(b' ', spaces));
+        data.push(b'\t');
+        fs::write(path.join("chunk"), data).unwrap();
+        check(
+            run(&mut command(path, "C.UTF-8"), &["chunk"], b""),
+            0,
+            &expected,
+        );
+    }
+
+    check(
+        run(
+            &mut command(path, "C.UTF-8"),
+            &[],
+            "\0é\x08\u{ad}\t".as_bytes(),
+        ),
+        0,
+        "\0é\x08\u{ad}       ".as_bytes(),
+    );
+    check(
+        run(&mut command(path, "C.UTF-8"), &[], b"\x80\x80\x80"),
+        0,
+        b"\x80\x80\x80",
+    );
+}
+
+#[cfg(all(unix, not(target_os = "fuchsia")))]
+#[test]
+fn writes_expanded_text_to_a_terminal() {
+    use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, SetArg};
+    use std::io::Read;
+
+    let directory = tempfile::tempdir().unwrap();
+    let pty = nix::pty::openpty(None, None).unwrap();
+    let mut settings = tcgetattr(&pty.slave).unwrap();
+    cfmakeraw(&mut settings);
+    tcsetattr(&pty.slave, SetArg::TCSANOW, &settings).unwrap();
+    fs::write(directory.path().join("input"), b"\tx\n").unwrap();
+    let result = command(directory.path(), "C")
+        .arg("input")
+        .stdout(pty.slave)
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{result:?}");
+    let mut terminal = fs::File::from(pty.master);
+    let mut bytes = [0; 10];
+    terminal.read_exact(&mut bytes).unwrap();
+    assert_eq!(&bytes, b"        x\n");
+}

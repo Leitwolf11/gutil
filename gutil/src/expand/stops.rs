@@ -148,3 +148,20 @@ pub(super) fn advance(column: u64, width: u64) -> io::Result<u64> {
         .filter(|&column| column <= MAX_COLUMN)
         .ok_or_else(|| io::Error::other("input line is too long"))
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+#[test]
+fn refuses_a_tab_stop_past_the_maximum_column() {
+    let mut builder = Builder::default();
+    builder.add(b"8").unwrap();
+    assert_eq!(
+        builder
+            .finish()
+            .unwrap()
+            .next(MAX_COLUMN)
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::Other
+    );
+}
