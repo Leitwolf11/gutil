@@ -157,6 +157,50 @@ mod unix {
     }
 
     #[test]
+    fn handles_context_flags_and_keeps_progress_off_stdout() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path();
+        for (flags, name) in [
+            ("--context", "default-context"),
+            ("--context=requested", "explicit-context"),
+            ("-Zj2", "clustered-context"),
+        ] {
+            let output = command(path).args([flags, name]).output().unwrap();
+            assert_eq!(output.stdout, b"");
+            if output.status.success() {
+                assert!(fs::symlink_metadata(path.join(name))
+                    .unwrap()
+                    .file_type()
+                    .is_fifo());
+                if flags == "--context=requested" {
+                    assert!(String::from_utf8_lossy(&output.stderr).contains("ignoring context"));
+                }
+            } else {
+                assert!(String::from_utf8_lossy(&output.stderr)
+                    .contains("context assignment is unavailable"));
+                assert!(!path.join(name).exists());
+            }
+        }
+
+        let output = Command::new(GUTIL)
+            .current_dir(path)
+            .env("POSIXLY_CORRECT", "1")
+            .args([
+                "--no-config",
+                "--progress=always",
+                "mkfifo",
+                "first",
+                "-last",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(output.stdout, b"");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("FIFOs"));
+        assert!(path.join("-last").exists());
+    }
+
+    #[test]
     fn matches_gnu_output_status_and_modes_when_configured() {
         let Some(bin) = std::env::var_os("GNU_COREUTILS_DIR") else {
             return;
