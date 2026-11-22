@@ -407,3 +407,23 @@ fn retains_native_bytes_in_a_count_file_list() {
         b"1 name\xff\n",
     );
 }
+
+#[test]
+fn counts_c_locale_words_across_read_boundaries() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    // The first word spans multiple full reads. The remaining bytes exercise
+    // every C-locale separator and bytes outside ASCII.
+    let mut input = vec![b'x'; 128 * 1024 + 19];
+    input.extend_from_slice(b"\tword\x0bother\x0c\x80\xff\r\nlast ");
+    fs::write(path.join("words"), &input).unwrap();
+    let expected = format!("1 5 {}\n", input.len());
+    verify(
+        command(path, &["wc", "--total=only", "words"])
+            .output()
+            .unwrap(),
+        expected.as_bytes(),
+    );
+    verify(run(path, &["wc", "-w", "--total=only"], &input), b"5\n");
+    verify(run(path, &["wc", "-w", "--total=only"], b""), b"0\n");
+}
