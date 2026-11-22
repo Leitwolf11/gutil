@@ -3,7 +3,7 @@ use std::io::{self, stderr};
 use std::path::{Path, PathBuf};
 
 use nix::fcntl::{AtFlags, AT_FDCWD};
-use nix::sys::stat::{fchmodat, fstatat, umask, FchmodatFlags, Mode, SFlag};
+use nix::sys::stat::{fstatat, umask, FileStat, Mode, SFlag};
 use nix::unistd::mkfifo;
 
 use super::LABEL;
@@ -90,7 +90,51 @@ fn set_permissions(
         return Err(io::Error::other("created FIFO was replaced"));
     }
     if Mode::from_bits_truncate(metadata.st_mode) != permissions {
-        fchmodat(directory, name, permissions, FchmodatFlags::NoFollowSymlink)?;
+        adjust_permissions(directory, name, &metadata, permissions)?;
     }
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn adjust_permissions(
+    directory: std::os::fd::BorrowedFd<'_>,
+    name: &OsStr,
+    metadata: &FileStat,
+    permissions: Mode,
+) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::PermissionsExt;
+
+    use nix::fcntl::{openat, OFlag};
+    use nix::sys::stat::fstat;
+
+    let fifo = openat(
+        directory,
+        name,
+        OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )?;
+    let pinned = fstat(&fifo)?;
+    if pinned.st_dev != metadata.st_dev || pinned.st_ino != metadata.st_ino {
+        return Err(io::Error::other("created FIFO was replaced"));
+    }
+    // An O_PATH descriptor pins the inode without opening a FIFO endpoint.
+    // The procfs descriptor link allows chmod even when the FIFO mode is 000.
+    let descriptor = format!("/proc/self/fd/{}", fifo.as_raw_fd());
+    std::fs::set_permissions(
+        descriptor,
+        std::fs::Permissions::from_mode(permissions.bits()),
+    )
+}
+
+#[cfg(not(target_os = "linux"))]
+fn adjust_permissions(
+    directory: std::os::fd::BorrowedFd<'_>,
+    name: &OsStr,
+    _metadata: &FileStat,
+    permissions: Mode,
+) -> io::Result<()> {
+    use nix::sys::stat::{fchmodat, FchmodatFlags};
+
+    fchmodat(directory, name, permissions, FchmodatFlags::NoFollowSymlink).map_err(io::Error::from)
 }

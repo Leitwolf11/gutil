@@ -210,4 +210,34 @@ mod unix {
             }
         }
     }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn preserves_inherited_acl_and_applies_the_requested_mode() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path();
+        let Ok(acl) = Command::new("setfacl")
+            .args(["-m", "d:u::rw-,d:g::r--,d:o::---,d:u:65534:r--"])
+            .arg(path)
+            .output()
+        else {
+            return;
+        };
+        if !acl.status.success() {
+            return;
+        }
+        let default = command(path).arg("inherited").output().unwrap();
+        assert!(default.status.success(), "{default:?}");
+        let explicit = command(path).args(["-m666", "explicit"]).output().unwrap();
+        assert!(explicit.status.success(), "{explicit:?}");
+        assert_eq!(permissions(&path.join("inherited")), 0o640);
+        assert_eq!(permissions(&path.join("explicit")), 0o666);
+        let acl = Command::new("getfacl")
+            .args(["-cn", "explicit"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        assert!(acl.status.success(), "{acl:?}");
+        assert!(String::from_utf8_lossy(&acl.stdout).contains("user:65534:r--"));
+    }
 }
