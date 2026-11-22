@@ -355,6 +355,11 @@ fn unexpand_keeps_valid_unicode_and_pending_blanks_between_operands() {
         0,
         b"\xff\tx\n",
     );
+    check(
+        run(&mut unexpand(), &[], b"abc\xff  \tx\n"),
+        0,
+        b"abc\xff  \tx\n",
+    );
     fs::write(path.join("first"), b"abc ").unwrap();
     fs::write(path.join("second"), b" x\n").unwrap();
     let result = run(&mut unexpand(), &["-t4", "first", "missing", "second"], b"");
