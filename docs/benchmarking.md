@@ -276,3 +276,7 @@ budget when comparing small invocation costs and keep slower cases visible.
 ## Adjacent-record filtering
 
 [Linux x86-64 adjacent-record filtering comparison](bench-results/2026-11-20-linux-x86-64-uniq.md)
+
+## Dependency ordering
+
+[Linux x86-64 topological ordering comparison](bench-results/2026-11-22-linux-x86-64-tsort.md)
