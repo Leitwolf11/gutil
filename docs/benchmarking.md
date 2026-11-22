@@ -92,6 +92,8 @@ from the fixture directory and reads no fixture data.
 
 [Linux x86-64 tab expansion comparison](bench-results/2026-11-22-linux-x86-64-expand.md)
 
+[Linux x86-64 line wrapping comparison](bench-results/2026-11-22-linux-x86-64-fold.md)
+
 ## Path commands
 
 Set `GNU_COREUTILS_DIR` to the directory containing GNU `basename`,
