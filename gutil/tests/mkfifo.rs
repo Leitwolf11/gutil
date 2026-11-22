@@ -115,7 +115,6 @@ mod unix {
         fs::write(path.join("keep"), b"unchanged").unwrap();
         symlink("keep", path.join("alias")).unwrap();
         fs::create_dir(path.join("nested")).unwrap();
-        let name = OsString::from_vec(b"pipe-\xff".to_vec());
         let output = command(path)
             .args([
                 "-m600",
@@ -125,17 +124,12 @@ mod unix {
                 "--",
                 "-dash",
             ])
-            .arg(&name)
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(1));
         assert_eq!(fs::read(path.join("keep")).unwrap(), b"unchanged");
         assert!(path.join("alias").is_symlink());
-        for fifo in [
-            path.join("nested/fifo"),
-            path.join("-dash"),
-            path.join(name),
-        ] {
+        for fifo in [path.join("nested/fifo"), path.join("-dash")] {
             assert_eq!(permissions(&fifo), 0o600);
         }
         let fifo = path.join("nested/fifo");
@@ -156,6 +150,35 @@ mod unix {
             writer.join().unwrap();
             assert_eq!(bytes, b"message");
         });
+    }
+
+    #[test]
+    fn passes_non_utf8_operands_to_the_filesystem() {
+        let reference = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let name = OsString::from_vec(b"pipe-\xff".to_vec());
+        let reference_path = reference.path().join(&name);
+        let native = nix::unistd::mkfifo(
+            &reference_path,
+            nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+        );
+        let result = command(directory.path())
+            .arg("-m600")
+            .arg(&name)
+            .output()
+            .unwrap();
+        let actual = directory.path().join(&name);
+        assert_eq!(
+            result.status.success(),
+            native.is_ok(),
+            "{result:?}, {native:?}"
+        );
+        if native.is_ok() {
+            assert_eq!(permissions(&actual), 0o600);
+        } else {
+            assert!(!actual.exists());
+            assert!(String::from_utf8_lossy(&result.stderr).contains("pipe-"));
+        }
     }
 
     #[test]

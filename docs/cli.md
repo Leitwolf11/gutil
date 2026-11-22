@@ -701,6 +701,7 @@ send optional progress to standard error.
 
 `gutil mkfifo [OPTIONS] NAME...` creates Unix named pipes in operand order.
 Creation continues after an operand fails and leaves existing entries intact.
+The filesystem determines which native filenames it accepts.
 The default permissions start at `0666` and follow the caller's umask and
 the parent directory's inherited ACL. Use `-m MODE` or `--mode=MODE` for
 explicit octal or symbolic permissions. Symbolic modes start at `0666`.
