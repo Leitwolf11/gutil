@@ -801,7 +801,7 @@ dependencies = [
 
 [[package]]
 name = "gutil"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "ariadne",
  "atomicwrites",
@@ -1438,6 +1438,15 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "libc",
+]
+
+[[package]]
+name = "ntapi"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3b335231dfd352ffb0f8017f3b6027a4917f7df785ea2143d8af2adc66980ae"
+dependencies = [
+ "winapi",
 ]
 
 [[package]]
@@ -2378,6 +2387,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e80749408e2d8bec0ffa303012cf4e1b3b355f4a09087b4fdf7473680f6a2de"
 dependencies = [
  "libc",
+ "memchr",
+ "ntapi",
  "objc2-core-foundation",
  "objc2-io-kit",
  "windows",
