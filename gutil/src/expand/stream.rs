@@ -5,6 +5,7 @@ use unicode_width::UnicodeWidthChar;
 use super::options::Options;
 use super::stops::advance;
 use crate::presentation::ProgressReport;
+use crate::text::horizontal_blank;
 
 pub(super) const BUFFER_SIZE: usize = 64 * 1024;
 static SPACES: [u8; 8192] = [b' '; 8192];
@@ -162,21 +163,6 @@ pub(super) fn copy_input<W: Write>(
     };
     process(&buffer[..carry], output)?;
     Ok(error)
-}
-
-pub(super) fn utf8_locale() -> bool {
-    ["LC_ALL", "LC_CTYPE", "LANG"]
-        .into_iter()
-        .filter_map(|key| std::env::var(key).ok())
-        .find(|value| !value.is_empty())
-        .is_some_and(|value| {
-            let value = value.to_ascii_lowercase();
-            value.contains("utf-8") || value.contains("utf8")
-        })
-}
-
-pub(super) fn horizontal_blank(character: char) -> bool {
-    matches!(character, ' ' | '\t' | '\u{1680}' | '\u{2000}'..='\u{2006}' | '\u{2008}'..='\u{200a}' | '\u{205f}' | '\u{3000}')
 }
 
 pub(super) fn display_width(character: char) -> u64 {
