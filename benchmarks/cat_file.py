@@ -24,9 +24,9 @@ def executable(path):
 def invoke(command, target, environment, verify_pipe=False):
     payload_hash = None
     # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
-    with subprocess.Popen(  # nosec B603 -- Validated executable, shell=False.
-        command, env=environment, stdin=subprocess.DEVNULL, stdout=target,
-        stderr=subprocess.PIPE, shell=False,
+    with subprocess.Popen(command,  # nosec B603 -- Validated executable, shell=False.
+        env=environment, stdin=subprocess.DEVNULL, stdout=target, stderr=subprocess.PIPE,
+        shell=False,
     ) as child:
         if child.stdout is not None:
             if verify_pipe:
