@@ -263,3 +263,7 @@ settings. Process startup and captured output are timed; fixture setup,
 cleanup, and complete object-state verification are excluded. Raw samples
 retain binary hashes and paired elapsed-time reductions. Use a fixed CPU
 budget when comparing small invocation costs and keep slower cases visible.
+
+## Named pipe creation
+
+[Linux x86-64 named pipe creation comparison](bench-results/2026-11-22-linux-x86-64-mkfifo.md)
