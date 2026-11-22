@@ -1,0 +1,272 @@
+{
+  "date": "2026-11-22",
+  "host": {
+    "cpu": "Intel Core i5-3210M at 2.50 GHz",
+    "cores": 2,
+    "logical_cpus": 4,
+    "memory_bytes_visible": 8171552768,
+    "distribution": "Arch Linux x86-64",
+    "kernel": "7.3.4-zen2-2-zen",
+    "executable_filesystem": "ext4",
+    "fixture_filesystem": "tmpfs",
+    "rustc": "1.100.0",
+    "llvm": "23.1.5"
+  },
+  "comparison": {
+    "profile": "release",
+    "baseline_git_revision": "8cf610e0f42bb27623286c83830794ae60488568",
+    "candidate_git_revision": "a328d1daebeb6d4b48284faa9d9f2bd47ed922e9",
+    "gnu_coreutils_version": "9.12",
+    "gutil_options": [
+      "--no-config",
+      "--progress=never",
+      "--jobs=1"
+    ],
+    "timing": "Process startup, input reading, line wrapping, and output writing"
+  },
+  "rounds": 12,
+  "warmup": 4,
+  "seed": 477,
+  "affinity": [
+    3
+  ],
+  "binaries": {
+    "candidate": "261b4948e88b22ea1f88e1c2934c3dd5abe00c516fc25991230adf62fe3a7ac0",
+    "gnu": "1dc48335f736ac8f967d035daa9ff8a35836b705d7f9d3ea41352551d1d622df",
+    "baseline": "344fda2ea9400f2bebaac5334c2123954fbb3e0fcf15df1ba597d53a9942ccbd"
+  },
+  "results": {
+    "ascii-columns": {
+      "locale": "C",
+      "flags": [
+        "-w72"
+      ],
+      "record": "alpha beta gamma delta epsilon zeta eta theta iota kappa alpha beta gamma delta epsilon zeta eta theta iota kappa alpha beta gamma delta epsilon zeta eta theta iota kappa alpha beta gamma delta epsilon zeta eta theta iota kappa\n",
+      "input_bytes": 16777152,
+      "output_sha256": "87b618b2e038da88b99ad405462c1d87931c81bc655414e4ebee1747aff1aee8",
+      "samples_ms": {
+        "candidate": [
+          21.652286,
+          28.870675,
+          20.585719,
+          21.654351,
+          20.392615,
+          18.788146,
+          18.234383,
+          20.49443,
+          22.511425,
+          23.051563,
+          26.268939,
+          21.075211
+        ],
+        "gnu": [
+          275.911468,
+          285.856928,
+          307.284345,
+          297.205006,
+          273.558816,
+          278.542211,
+          269.190497,
+          279.96016,
+          277.660501,
+          272.610189,
+          293.120571,
+          279.454296
+        ],
+        "baseline": [
+          29.328154,
+          23.598719,
+          21.214897,
+          22.505631,
+          19.684959,
+          19.057201,
+          20.459948,
+          20.135271,
+          22.926127,
+          21.025018,
+          20.117102,
+          20.435619
+        ]
+      },
+      "median_ms": {
+        "candidate": 21.3637485,
+        "gnu": 278.99825350000003,
+        "baseline": 20.742483
+      }
+    },
+    "ascii-spaces": {
+      "locale": "C",
+      "flags": [
+        "-sw72"
+      ],
+      "record": "alpha beta gamma delta epsilon zeta eta theta iota kappa alpha beta gamma delta epsilon zeta eta theta iota kappa alpha beta gamma delta epsilon zeta eta theta iota kappa alpha beta gamma delta epsilon zeta eta theta iota kappa\n",
+      "input_bytes": 16777152,
+      "output_sha256": "96cb99bbd8f65ac1b3e7cc5481c84d02e06243377a125d40ab9b274cc5940bf1",
+      "samples_ms": {
+        "candidate": [
+          26.230007,
+          25.205884,
+          25.440736,
+          25.302122,
+          26.517977,
+          24.870204,
+          41.653592,
+          26.666329,
+          35.105288,
+          24.519754,
+          24.439075,
+          24.444613
+        ],
+        "gnu": [
+          358.251425,
+          381.072243,
+          355.740985,
+          350.79269,
+          358.899292,
+          357.652913,
+          389.965139,
+          480.317397,
+          346.904264,
+          344.404075,
+          341.882022,
+          388.247414
+        ],
+        "baseline": [
+          265.17445,
+          259.512706,
+          256.07152,
+          254.291343,
+          265.496426,
+          258.556162,
+          256.59343,
+          347.299213,
+          262.511734,
+          254.63022,
+          270.779736,
+          273.350343
+        ]
+      },
+      "median_ms": {
+        "candidate": 25.371429,
+        "gnu": 357.952169,
+        "baseline": 261.01221999999996
+      }
+    },
+    "utf8-columns": {
+      "locale": "C.UTF-8",
+      "flags": [
+        "-w72"
+      ],
+      "record": "caf\u00e9 monde \u65e5\u672c\u8a9e \u3072\u3089\u304c\u306a \ud83e\uddea na\u00efve espa\u00e7os caf\u00e9 monde \u65e5\u672c\u8a9e \u3072\u3089\u304c\u306a \ud83e\uddea na\u00efve espa\u00e7os caf\u00e9 monde \u65e5\u672c\u8a9e \u3072\u3089\u304c\u306a \ud83e\uddea na\u00efve espa\u00e7os caf\u00e9 monde \u65e5\u672c\u8a9e \u3072\u3089\u304c\u306a \ud83e\uddea na\u00efve espa\u00e7os\n",
+      "input_bytes": 16777152,
+      "output_sha256": "577fe5bd310f830a5e639c63dee3b582aaa8e525ce072b9e91fc248ec339b5c7",
+      "samples_ms": {
+        "candidate": [
+          144.554546,
+          151.21025,
+          149.534368,
+          145.312623,
+          162.67695,
+          150.389124,
+          149.809112,
+          147.900337,
+          146.646672,
+          150.161755,
+          169.858511,
+          154.453089
+        ],
+        "gnu": [
+          225.675189,
+          228.468211,
+          234.482852,
+          313.880209,
+          232.999747,
+          256.701424,
+          246.563862,
+          247.213097,
+          217.590277,
+          219.113673,
+          242.0688,
+          223.993678
+        ],
+        "baseline": [
+          142.789458,
+          149.701476,
+          144.007548,
+          142.768934,
+          142.925966,
+          149.465807,
+          137.178129,
+          145.481706,
+          139.943497,
+          141.979738,
+          145.130348,
+          147.031451
+        ]
+      },
+      "median_ms": {
+        "candidate": 149.9854335,
+        "gnu": 233.74129950000003,
+        "baseline": 143.466757
+      }
+    },
+    "utf8-spaces": {
+      "locale": "C.UTF-8",
+      "flags": [
+        "-sw72"
+      ],
+      "record": "caf\u00e9 monde \u65e5\u672c\u8a9e \u3072\u3089\u304c\u306a \ud83e\uddea na\u00efve espa\u00e7os caf\u00e9 monde \u65e5\u672c\u8a9e \u3072\u3089\u304c\u306a \ud83e\uddea na\u00efve espa\u00e7os caf\u00e9 monde \u65e5\u672c\u8a9e \u3072\u3089\u304c\u306a \ud83e\uddea na\u00efve espa\u00e7os caf\u00e9 monde \u65e5\u672c\u8a9e \u3072\u3089\u304c\u306a \ud83e\uddea na\u00efve espa\u00e7os\n",
+      "input_bytes": 16777152,
+      "output_sha256": "577fe5bd310f830a5e639c63dee3b582aaa8e525ce072b9e91fc248ec339b5c7",
+      "samples_ms": {
+        "candidate": [
+          220.062758,
+          220.106452,
+          223.815877,
+          227.314226,
+          228.511854,
+          222.987373,
+          224.168809,
+          234.421979,
+          228.311605,
+          220.44127,
+          233.911891,
+          228.556712
+        ],
+        "gnu": [
+          292.476985,
+          292.698419,
+          294.735687,
+          308.651502,
+          292.655008,
+          321.104613,
+          291.955604,
+          305.322114,
+          300.709264,
+          286.010108,
+          287.520472,
+          305.733171
+        ],
+        "baseline": [
+          228.210513,
+          220.946738,
+          227.346684,
+          228.906936,
+          225.205241,
+          219.851321,
+          229.010765,
+          233.061988,
+          231.221686,
+          219.818169,
+          222.248963,
+          235.266634
+        ]
+      },
+      "median_ms": {
+        "candidate": 225.7415175,
+        "gnu": 293.71705299999996,
+        "baseline": 227.7785985
+      }
+    }
+  }
+}

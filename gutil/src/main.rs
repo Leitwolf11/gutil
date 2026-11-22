@@ -8,6 +8,7 @@ mod encoding;
 mod expand;
 mod fd;
 mod file_size;
+mod fold;
 mod jobs;
 mod ls;
 mod mkdir;
@@ -34,7 +35,7 @@ use presentation::Presentation;
 use std::io::{self, BufWriter, IsTerminal, Write};
 use std::process::ExitCode;
 
-const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  arch, uname  Report machine and system information\n  base32, base64  Encode or decode data\n  df, duf  Report mounted filesystem usage\n  expand   Replace tabs with spaces\n  fd       Find files and directories\n  link, ln, unlink  Create links or remove file names\n  mkdir    Create directories\n  mktemp   Create temporary files or directories\n  rmdir    Remove empty directories\n  truncate  Adjust file sizes\n  basename  Print the final component of a path\n  dirname   Print the directory portion of a path\n  readlink  Print symbolic link targets\n  realpath  Print resolved paths\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  paste    Merge corresponding records from files\n  head     Print the beginning of files\n  tail     Print the end of files\n  tee      Copy standard input to files and standard output\n  unexpand  Replace blanks with tabs\n  uniq     Filter adjacent repeated records\n  wc       Count lines, words, and bytes\n  md5sum   Print or verify MD5 checksums\n  sha1sum  Print or verify SHA-1 checksums\n  sha224sum, sha256sum, sha384sum, sha512sum  Print or verify SHA-2 checksums\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n  echo, yes          Write text\n  false, true        Return a fixed exit status\n  nproc, printenv    Report processor or environment information\n  sleep              Pause for a duration\n  tty                Report the standard input terminal\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
+const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  arch, uname  Report machine and system information\n  base32, base64  Encode or decode data\n  df, duf  Report mounted filesystem usage\n  expand   Replace tabs with spaces\n  fd       Find files and directories\n  fold     Wrap input lines\n  link, ln, unlink  Create links or remove file names\n  mkdir    Create directories\n  mktemp   Create temporary files or directories\n  rmdir    Remove empty directories\n  truncate  Adjust file sizes\n  basename  Print the final component of a path\n  dirname   Print the directory portion of a path\n  readlink  Print symbolic link targets\n  realpath  Print resolved paths\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  paste    Merge corresponding records from files\n  head     Print the beginning of files\n  tail     Print the end of files\n  tee      Copy standard input to files and standard output\n  unexpand  Replace blanks with tabs\n  uniq     Filter adjacent repeated records\n  wc       Count lines, words, and bytes\n  md5sum   Print or verify MD5 checksums\n  sha1sum  Print or verify SHA-1 checksums\n  sha224sum, sha256sum, sha384sum, sha512sum  Print or verify SHA-2 checksums\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n  echo, yes          Write text\n  false, true        Return a fixed exit status\n  nproc, printenv    Report processor or environment information\n  sleep              Pause for a duration\n  tty                Report the standard input terminal\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
 
 fn main() -> ExitCode {
     // Discard argv[0] and preserve non-UTF-8 filesystem operands.
@@ -69,6 +70,7 @@ enum Command {
     Tabs(expand::Command),
     Disk(disk::Command),
     Fd,
+    Fold,
     Ls,
     Mkdir,
     Mktemp,
@@ -103,6 +105,7 @@ impl Command {
             Some("expand") => Self::Tabs(expand::Command::Expand),
             Some("unexpand") => Self::Tabs(expand::Command::Unexpand),
             Some("fd") => Self::Fd,
+            Some("fold") => Self::Fold,
             Some("head") => Self::Edge(edges::Edge::Head),
             Some("tail") => Self::Edge(edges::Edge::Tail),
             Some("ls") => Self::Ls,
@@ -167,15 +170,9 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         Err(error) => return startup_error(&error),
     };
     let settings = &mut loaded.settings;
-    if let Some(mode) = options.progress {
-        settings.global.progress = mode;
-    }
-    if let Some(mode) = options.color {
-        settings.output.color = mode;
-    }
-    if let Some(mode) = options.hyperlinks {
-        settings.output.hyperlinks = mode;
-    }
+    settings.global.progress = options.progress.unwrap_or(settings.global.progress);
+    settings.output.color = options.color.unwrap_or(settings.output.color);
+    settings.output.hyperlinks = options.hyperlinks.unwrap_or(settings.output.hyperlinks);
     let job_count = LazyCell::new(|| options.jobs.unwrap_or_else(|| settings.global.job_count()));
     let ui = Presentation::new(settings);
     if settings.diagnostics.verbosity == config::Verbosity::Verbose {
@@ -216,6 +213,7 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         }
         Command::Tabs(command) => return expand::run(command, args, *job_count, ui),
         Command::Fd => return fd::run(args, *job_count, ui),
+        Command::Fold => return fold::run(args, *job_count, ui),
         _ => {}
     }
 
@@ -303,6 +301,7 @@ fn direct_help_or_version(command: Command, option: Option<&str>) -> bool {
             | Command::Encoding(_)
             | Command::Tabs(_)
             | Command::Fd
+            | Command::Fold
             | Command::Ls
             | Command::Mkdir
             | Command::Mktemp

@@ -736,6 +736,28 @@ UTF-8 locales use Unicode display widths. Malformed units and other locale
 encodings follow the single-byte behavior. Input errors are reported per
 operand and subsequent files are still read. Progress goes to stderr.
 
+## fold
+
+`gutil fold [OPTIONS] [FILE]...` wraps input lines at 80 columns by default.
+Use `-w WIDTH`, `--width=WIDTH`, or a historical width option such as
+`-72` to select a positive width. `-s` prefers to break after horizontal
+blanks. Missing file operands and `-` select standard input.
+
+By default, wrapping tracks display columns. Tabs advance to eight-column
+stops, carriage returns reset the column, and backspaces move back by the
+last character's width. The backspace width starts at one on each line
+and resets to one after a tab or carriage return. `-c` uses a width of one
+for ordinary characters.
+`-b` counts bytes and ignores those cursor controls. UTF-8 locales keep
+complete scalars together, including in byte mode. Malformed bytes are
+preserved. Other locale encodings use the single-byte path. Unicode column
+widths use the library's Unicode tables.
+
+Operands are processed in order. Each operand starts a new wrapping
+position, and a missing final newline stays missing. Errors in one input
+do not prevent later inputs from being read. Progress, when enabled, is
+written to stderr.
+
 ## unexpand
 
 `gutil unexpand [OPTIONS] [FILE]...` replaces eligible blanks with tabs.
