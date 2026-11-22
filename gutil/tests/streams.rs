@@ -453,3 +453,15 @@ fn counts_utf8_across_ascii_and_split_multibyte_reads() {
         verify(output, expected.as_bytes());
     }
 }
+
+#[test]
+fn keeps_word_state_across_malformed_utf8_spans() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    fs::write(path.join("input"), b"\xffabc \xc3\xa9\xffz \xe2\x82").unwrap();
+    let output = command(path, &["wc", "-wm", "--total=only", "input"])
+        .env("LC_ALL", "C.UTF-8")
+        .output()
+        .unwrap();
+    verify(output, b"3 7\n");
+}
