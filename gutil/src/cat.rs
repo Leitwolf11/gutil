@@ -210,6 +210,14 @@ fn copy_files(format: Format, files: SmallVec<[OsString; 4]>, ui: Presentation) 
                 Ok(input) if destination.as_ref() == Some(&input) => Some(same_file_error()),
                 Ok(input) => {
                     let mut file = input.as_file();
+                    #[cfg(target_os = "linux")]
+                    if format == Format::default()
+                        && !interactive
+                        && progress.is_none()
+                        && copy_file_in_kernel(file, &output)
+                    {
+                        continue;
+                    }
                     if single_file {
                         if let Some(progress) = &mut progress {
                             if let Ok(metadata) = file.metadata() {
@@ -239,6 +247,25 @@ fn copy_files(format: Format, files: SmallVec<[OsString; 4]>, ui: Presentation) 
         progress.finish(&mut errors);
     }
     Ok(status)
+}
+
+#[cfg(target_os = "linux")]
+fn copy_file_in_kernel(input: &File, output: &io::StdoutLock<'_>) -> bool {
+    if !input
+        .metadata()
+        .is_ok_and(|metadata| metadata.is_file() && metadata.len() != 0)
+    {
+        return false;
+    }
+    loop {
+        match rustix::fs::sendfile(output, input, None, 16 * 1024 * 1024) {
+            Ok(0) => return true,
+            Ok(_) | Err(rustix::io::Errno::INTR) => {}
+            // Both descriptors keep their current offsets. The buffered path
+            // resumes at that point and distinguishes read and write errors.
+            Err(_) => return false,
+        }
+    }
 }
 
 fn same_file_error() -> io::Error {

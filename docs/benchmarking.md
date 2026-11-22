@@ -29,6 +29,7 @@ Compare timings from the same run. Long-format results include metadata formatti
 - [2026-11-09 · Linux x86-64 · ls](bench-results/2026-11-09-linux-x86-64-ls.md)
 - [2026-11-17 · Linux x86-64 · checksums](bench-results/2026-11-17-linux-x86-64-checksum.md)
 - [2026-11-17 · Linux x86-64 · streams and paths](bench-results/2026-11-17-linux-x86-64-streams.md)
+- [2026-11-22 · Linux x86-64 · regular-file cat](bench-results/2026-11-22-linux-x86-64-cat-file-transfer.md)
 - [2026-11-17 · Linux x86-64 · file names and symbolic links](bench-results/2026-11-17-linux-x86-64-paths.md)
 - [2026-11-17 · Linux x86-64 · shell and system utilities](bench-results/2026-11-17-linux-x86-64-shell.md)
 - [2026-11-17 · Linux x86-64 · file search](bench-results/2026-11-17-linux-x86-64-fd.md)
@@ -263,6 +264,8 @@ settings. Process startup and captured output are timed; fixture setup,
 cleanup, and complete object-state verification are excluded. Raw samples
 retain binary hashes and paired elapsed-time reductions. Use a fixed CPU
 budget when comparing small invocation costs and keep slower cases visible.
+
+[Linux x86-64 regular-file paste comparison](bench-results/2026-11-20-linux-x86-64-paste.md)
 
 ## Named pipe creation
 
