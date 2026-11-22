@@ -56,12 +56,12 @@ def measure(gutil, gnu, root):
             labels = list(commands)
             rng.shuffle(labels)
             for label in labels:
+                command = [*commands[label], str(source)]
                 with destination.open("wb") as output:
                     started = time.perf_counter_ns()
                     # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
-                    result = subprocess.run(  # nosec B603 -- Validated executable, shell=False.
-                        [*commands[label], str(source)], stdout=output, stderr=subprocess.PIPE,
-                        env=environment, shell=False,
+                    result = subprocess.run(command,  # nosec B603 -- Validated executable, shell=False.
+                        env=environment, stdout=output, stderr=subprocess.PIPE, shell=False,
                     )
                     elapsed = (time.perf_counter_ns() - started) / 1_000_000
                 with destination.open("rb") as output:
