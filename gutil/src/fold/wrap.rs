@@ -6,6 +6,7 @@ use super::options::{Count, Options};
 use crate::presentation::ProgressReport;
 
 const BUFFER_SIZE: usize = 64 * 1024;
+const BLANK_WINDOW: usize = 256 * 1024;
 
 pub(super) struct Folder<'a> {
     options: &'a Options,
@@ -197,9 +198,18 @@ impl<'a> Folder<'a> {
         if bytes.is_empty() {
             return Ok(());
         }
-        if self.options.spaces {
+        let fixed = self.fixed_units(bytes);
+        if self.options.spaces
+            && fixed
+            && self.options.width < BLANK_WINDOW
+            && self.pending.len() <= self.options.width
+            && self.cursor.column == self.pending.len()
+            && self.fixed_units(&self.pending)
+        {
+            self.fixed_with_blanks(bytes, output)
+        } else if self.options.spaces {
             self.prefer_blanks(bytes, output)
-        } else if self.fixed_units(bytes) {
+        } else if fixed {
             self.fixed_segment(bytes, output)
         } else {
             self.variable_segment(bytes, output)
@@ -249,45 +259,55 @@ impl<'a> Folder<'a> {
         output.write_all(&bytes[start..])
     }
 
+    fn fixed_with_blanks(&mut self, mut bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
+        while !bytes.is_empty() {
+            let take = bytes.len().min(self.options.width - self.pending.len());
+            let (prefix, rest) = bytes.split_at(take);
+            if let Some(blank) = memchr::memrchr2(b' ', b'\t', prefix) {
+                self.blank_end = Some(self.pending.len() + blank + 1);
+            }
+            self.pending.extend_from_slice(prefix);
+            if !rest.is_empty() {
+                self.write_wrap(output)?;
+            }
+            bytes = rest;
+        }
+        self.cursor.column = self.pending.len();
+        self.cursor.last_width = 1;
+        Ok(())
+    }
+
     fn prefer_blanks(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
         let mut offset = 0;
         while offset < bytes.len() {
             let unit = Unit::read(&bytes[offset..], self.utf8);
             self.cursor.advance(self.options.count, unit);
-            while self.cursor.column > self.options.width
-                && (self.emitted || !self.pending.is_empty())
-            {
-                let split = self.blank_end.take().unwrap_or(self.pending.len());
-                self.emit_prefix(output, split)?;
-                output.write_all(b"\n")?;
-                self.emitted = false;
+            while self.cursor.column > self.options.width && !self.pending.is_empty() {
+                self.write_wrap(output)?;
                 self.cursor.column = 0;
                 self.rescan_pending();
                 self.cursor.advance(self.options.count, unit);
+            }
+            if self.pending.len() + unit.bytes >= BLANK_WINDOW {
+                output.write_all(&self.pending)?;
+                self.pending.clear();
+                self.blank_end = None;
             }
             let end = offset + unit.bytes;
             self.pending.extend_from_slice(&bytes[offset..end]);
             if unit.is_blank() {
                 self.blank_end = Some(self.pending.len());
             }
-            if self.pending.len() >= BUFFER_SIZE {
-                let flush = self.blank_end.unwrap_or(self.pending.len());
-                if flush != 0 {
-                    self.emit_prefix(output, flush)?;
-                    if self.blank_end.is_some() {
-                        self.blank_end = Some(0);
-                    }
-                }
-            }
             offset = end;
         }
         Ok(())
     }
 
-    fn emit_prefix(&mut self, output: &mut impl Write, count: usize) -> io::Result<()> {
-        output.write_all(&self.pending[..count])?;
-        self.pending.drain(..count);
-        self.emitted = true;
+    fn write_wrap(&mut self, output: &mut impl Write) -> io::Result<()> {
+        let end = self.blank_end.take().unwrap_or(self.pending.len());
+        output.write_all(&self.pending[..end])?;
+        output.write_all(b"\n")?;
+        self.pending.drain(..end);
         Ok(())
     }
 

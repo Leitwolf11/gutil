@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufWriter, IsTerminal, Write};
 use std::path::Path;
 
 use crate::jobs;
@@ -50,7 +50,9 @@ pub(crate) fn run(
 fn execute(options: &Options, ui: Presentation) -> io::Result<u8> {
     let mut folder = Folder::new(options);
     let mut progress = ui.progress(LABEL, "bytes", true);
-    let mut output = BufWriter::with_capacity(64 * 1024, io::stdout().lock());
+    let stdout = io::stdout();
+    let capacity = if stdout.is_terminal() { 0 } else { 64 * 1024 };
+    let mut output = BufWriter::with_capacity(capacity, stdout.lock());
     let mut errors = io::stderr().lock();
     let mut status = 0;
     for path in &options.paths {

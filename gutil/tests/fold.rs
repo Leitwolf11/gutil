@@ -124,6 +124,21 @@ fn keeps_utf8_scalars_intact_across_reads_and_copies_invalid_bytes() {
 }
 
 #[test]
+fn bounds_the_blank_search_window_on_long_zero_width_input() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut data = b"a ".to_vec();
+    data.extend(std::iter::repeat_n(0, 270_000));
+    data.extend_from_slice(b"bc\n");
+    let mut expected = data.clone();
+    expected.insert(data.len() - 2, b'\n');
+    expect(
+        run(&mut command(directory.path(), "C"), &["-sw3"], &data),
+        0,
+        &expected,
+    );
+}
+
+#[test]
 fn resets_at_operands_and_continues_after_open_errors() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path();
@@ -173,6 +188,23 @@ fn validates_options_and_keeps_progress_on_stderr() {
     let result = run(&mut progress, &["-sj2", "-w2"], b"abcd");
     assert!(String::from_utf8_lossy(&result.stderr).contains("bytes"));
     expect(result, 0, b"ab\ncd");
+}
+
+#[test]
+fn reports_a_closed_output_pipe() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    fs::write(path.join("input"), vec![b'x'; 2 * 1024 * 1024]).unwrap();
+    let mut child = command(path, "C")
+        .args(["-w40", "input"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.starts_with(b"gutil fold:"));
 }
 
 #[test]

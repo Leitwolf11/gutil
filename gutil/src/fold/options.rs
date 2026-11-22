@@ -151,10 +151,8 @@ fn width(
         separate.as_encoded_bytes()
     };
     let text = std::str::from_utf8(bytes).map_err(|_| Error::Width)?;
-    let digits = text
-        .trim_start()
-        .strip_prefix('+')
-        .unwrap_or(text.trim_start());
+    let text = text.trim_start_matches(|character| matches!(character, ' ' | '\t'..='\r'));
+    let digits = text.strip_prefix('+').unwrap_or(text);
     if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(Error::Width);
     }
