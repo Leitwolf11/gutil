@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare C-locale wc word counting with an earlier gutil and GNU wc."""
+"""Compare wc word and character counting with an earlier gutil and GNU wc."""
 
 import argparse
 import hashlib
@@ -24,7 +24,7 @@ def main():
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--gnu", type=Path, default=Path("/usr/bin/wc"))
-    parser.add_argument("--utf8", action="store_true", help="Measure an ASCII file and a mixed UTF-8 file in C.UTF-8")
+    parser.add_argument("--utf8", action="store_true", help="Measure word and character counts in C.UTF-8")
     options = parser.parse_args()
     binaries = {
         "baseline": valid_executable(options.baseline),
@@ -44,10 +44,13 @@ def main():
             ("utf8-words", ["-w"], "C.UTF-8", pattern),
         ]
         if options.utf8:
+            mixed = "café mundo\t日本語 autre\n".encode()
             cases = [
                 ("utf8-ascii-words", ["-w"], "C.UTF-8", pattern),
                 ("utf8-ascii-words-chars", ["-wm"], "C.UTF-8", pattern),
-                ("utf8-mixed-words", ["-w"], "C.UTF-8", "café mundo\t日本語 autre\n".encode()),
+                ("utf8-mixed-words", ["-w"], "C.UTF-8", mixed),
+                ("utf8-mixed-chars", ["-m"], "C.UTF-8", mixed),
+                ("utf8-mixed-words-chars", ["-wm"], "C.UTF-8", mixed),
             ]
         for case, flags, locale, fixture_pattern in cases:
             fixture.write_bytes((fixture_pattern * (size // len(fixture_pattern) + 1))[:size])
