@@ -169,15 +169,9 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         Err(error) => return startup_error(&error),
     };
     let settings = &mut loaded.settings;
-    if let Some(mode) = options.progress {
-        settings.global.progress = mode;
-    }
-    if let Some(mode) = options.color {
-        settings.output.color = mode;
-    }
-    if let Some(mode) = options.hyperlinks {
-        settings.output.hyperlinks = mode;
-    }
+    settings.global.progress = options.progress.unwrap_or(settings.global.progress);
+    settings.output.color = options.color.unwrap_or(settings.output.color);
+    settings.output.hyperlinks = options.hyperlinks.unwrap_or(settings.output.hyperlinks);
     let job_count = LazyCell::new(|| options.jobs.unwrap_or_else(|| settings.global.job_count()));
     let ui = Presentation::new(settings);
     if settings.diagnostics.verbosity == config::Verbosity::Verbose {
