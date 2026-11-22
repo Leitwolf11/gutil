@@ -1,0 +1,206 @@
+{
+  "date": "2026-11-22",
+  "host": {
+    "cpu": "Intel Core i5-3210M at 2.50 GHz",
+    "cores": 2,
+    "logical_cpus": 4,
+    "memory_bytes_visible": 8171552768,
+    "operating_system": "Arch Linux x86-64",
+    "kernel": "7.3.4-zen2-2-zen",
+    "executable_filesystem": "ext4",
+    "fixture_filesystem": "tmpfs",
+    "rustc": "1.100.0",
+    "llvm": "23.1.5"
+  },
+  "comparison": {
+    "profile": "release",
+    "candidate_git_revision": "05be4338ffc1d7b2fe4c1b7358636b8d9fd634cd",
+    "gnu_coreutils_version": "9.12",
+    "gutil_options": [
+      "--no-config",
+      "--progress=never",
+      "--jobs=1"
+    ],
+    "timing": "Process startup, regular-file input and output, conversion, and exit"
+  },
+  "rounds": 12,
+  "warmup": 4,
+  "seed": 477,
+  "affinity": [
+    3
+  ],
+  "binaries": {
+    "candidate": "4aa468921d4636d041877b13c4c383140cca5bcb9094e72ef3ed00d854dff709",
+    "gnu": "17e907b29b69e15e7a8d07e3c1c427cacab997fa061785c753b594db7b230e4f"
+  },
+  "results": {
+    "ascii-default": {
+      "locale": "C",
+      "flags": [],
+      "record": "\t\t alpha\tbeta gamma\tdelta\tend \t\t alpha\tbeta gamma\tdelta\tend \t\t alpha\tbeta gamma\tdelta\tend \t\t alpha\tbeta gamma\tdelta\tend \t\t alpha\tbeta gamma\tdelta\tend\n",
+      "input_bytes": 16777200,
+      "output_sha256": "f31fa32f45adf5878d35a61e946701e23f07433540ed3849b50044441b59ea7b",
+      "samples_ms": {
+        "candidate": [
+          87.677703,
+          88.711064,
+          85.969319,
+          87.644841,
+          85.93049,
+          85.380416,
+          84.095573,
+          85.989131,
+          86.45167,
+          84.58954,
+          87.817911,
+          87.236449
+        ],
+        "gnu": [
+          397.60225,
+          418.142653,
+          405.92239,
+          401.106356,
+          408.986568,
+          404.049466,
+          425.336618,
+          418.033001,
+          408.791494,
+          403.443665,
+          404.943961,
+          418.378224
+        ]
+      },
+      "median_ms": {
+        "candidate": 86.2204005,
+        "gnu": 407.356942
+      }
+    },
+    "ascii-initial": {
+      "locale": "C",
+      "flags": [
+        "-i"
+      ],
+      "record": "\t\t alpha\tbeta gamma\tdelta\tend \t\t alpha\tbeta gamma\tdelta\tend \t\t alpha\tbeta gamma\tdelta\tend \t\t alpha\tbeta gamma\tdelta\tend \t\t alpha\tbeta gamma\tdelta\tend\n",
+      "input_bytes": 16777200,
+      "output_sha256": "1663fb26ac6fd16b99c1ab8aa1a3e8dca6c278cfc8ff4f3d710e52512d5f7c78",
+      "samples_ms": {
+        "candidate": [
+          40.688519,
+          50.900441,
+          41.427851,
+          42.47955,
+          41.129832,
+          44.877526,
+          41.101455,
+          41.234818,
+          41.675735,
+          40.704472,
+          43.897316,
+          39.475168
+        ],
+        "gnu": [
+          292.429671,
+          292.493046,
+          287.184012,
+          288.136842,
+          294.36773,
+          300.499013,
+          292.37104,
+          292.169106,
+          281.949129,
+          284.865301,
+          282.400781,
+          288.271127
+        ]
+      },
+      "median_ms": {
+        "candidate": 41.3313345,
+        "gnu": 290.2201165
+      }
+    },
+    "ascii-custom": {
+      "locale": "C",
+      "flags": [
+        "-t3,11,+5"
+      ],
+      "record": "\t\t alpha\tbeta gamma\tdelta\tend \t\t alpha\tbeta gamma\tdelta\tend \t\t alpha\tbeta gamma\tdelta\tend \t\t alpha\tbeta gamma\tdelta\tend \t\t alpha\tbeta gamma\tdelta\tend\n",
+      "input_bytes": 16777200,
+      "output_sha256": "a2b866afd03ef80b12a4d8691116db6ff221f0672245eec63f876fe16fd7642b",
+      "samples_ms": {
+        "candidate": [
+          85.290361,
+          85.667781,
+          84.77833,
+          94.803203,
+          88.116068,
+          84.551242,
+          88.249963,
+          95.741929,
+          84.10969,
+          84.89511,
+          85.307422,
+          84.59282
+        ],
+        "gnu": [
+          388.921419,
+          402.045161,
+          417.367144,
+          401.900969,
+          404.387576,
+          396.239436,
+          392.395927,
+          401.458166,
+          412.886371,
+          399.509784,
+          393.1088,
+          394.104854
+        ]
+      },
+      "median_ms": {
+        "candidate": 85.2988915,
+        "gnu": 400.483975
+      }
+    },
+    "utf8-columns": {
+      "locale": "C.UTF-8",
+      "flags": [],
+      "record": "\t caf\u00e9\t\u65e5\u672c\u8a9e\t\ud83e\uddea na\u00efve\t espa\u00e7os \t caf\u00e9\t\u65e5\u672c\u8a9e\t\ud83e\uddea na\u00efve\t espa\u00e7os \t caf\u00e9\t\u65e5\u672c\u8a9e\t\ud83e\uddea na\u00efve\t espa\u00e7os \t caf\u00e9\t\u65e5\u672c\u8a9e\t\ud83e\uddea na\u00efve\t espa\u00e7os \t caf\u00e9\t\u65e5\u672c\u8a9e\t\ud83e\uddea na\u00efve\t espa\u00e7os\n",
+      "input_bytes": 16777200,
+      "output_sha256": "584d6c10abf23de8c9ea327bf203e181dee9da72025026bbd5f47cd52ec08046",
+      "samples_ms": {
+        "candidate": [
+          133.531422,
+          131.618876,
+          138.949755,
+          133.715005,
+          137.950617,
+          134.613349,
+          134.816212,
+          133.323583,
+          130.287897,
+          131.076085,
+          130.464557,
+          139.518162
+        ],
+        "gnu": [
+          306.020019,
+          301.435608,
+          303.807181,
+          307.208914,
+          312.121597,
+          304.129023,
+          306.613218,
+          309.658637,
+          311.781129,
+          305.757294,
+          311.878225,
+          312.135911
+        ]
+      },
+      "median_ms": {
+        "candidate": 133.6232135,
+        "gnu": 306.911066
+      }
+    }
+  }
+}
