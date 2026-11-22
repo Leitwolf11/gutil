@@ -134,6 +134,39 @@ fn handles_unicode_delimiters_and_large_records() {
 }
 
 #[test]
+fn cycles_escaped_unicode_with_worker_option_spellings() {
+    let fixture = tempfile::tempdir().unwrap();
+    for flags in [&["--jobs=2", "-s"][..], &["-sj2"]] {
+        let mut args = flags.to_vec();
+        args.extend([r"--delimiters=\é🧪:", "-"]);
+        let output = run(
+            command(fixture.path()).env("LC_ALL", "C.UTF-8"),
+            &args,
+            b"a\nb\nc\nd",
+        );
+        verify(output, 0, "aéb🧪c:d\n".as_bytes());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn preserves_malformed_native_delimiter_bytes() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let fixture = tempfile::tempdir().unwrap();
+    let output = run(
+        command(fixture.path())
+            .env("LC_ALL", "C.UTF-8")
+            .arg("-d")
+            .arg(OsString::from_vec(vec![0xe2, b':'])),
+        &["-", "-", "-"],
+        b"a\nb\nc",
+    );
+    verify(output, 0, b"a\xe2b:c\n");
+}
+
+#[test]
 fn continues_after_open_errors_only_in_serial_mode() {
     let fixture = tempfile::tempdir().unwrap();
     let path = fixture.path();

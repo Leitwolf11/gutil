@@ -650,6 +650,17 @@ gutil mktemp -d -p ./build cache.XXXXXX
 gutil mktemp --suffix=.json artifact.XXXXXXXX
 ```
 
+## tty
+
+`gutil tty` prints the name of the terminal connected to standard input.
+It exits with status 0 when a terminal is available and prints `not a tty`
+with status 1 for redirected input. Use `-s`, `--silent`, or `--quiet` to
+report the status alone. Usage errors exit with status 2. Output failures
+exit with status 3.
+
+Unix reports the native terminal device path. Windows uses the console label
+`CONIN$` when Rust recognizes standard input as a terminal.
+
 ## paste
 
 `gutil paste [OPTIONS] [FILE]...` merges corresponding records with tab
