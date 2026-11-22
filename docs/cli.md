@@ -696,3 +696,26 @@ uses Unicode delimiter characters.
 An input open failure in parallel mode prevents output. Serial mode
 reports a failed file and continues. Both modes retain record order and
 send optional progress to standard error.
+
+## mkfifo
+
+`gutil mkfifo [OPTIONS] NAME...` creates Unix named pipes in operand order.
+Creation continues after an operand fails and leaves existing entries intact.
+The filesystem determines which native filenames it accepts.
+The default permissions start at `0666` and follow the caller's umask and
+the parent directory's inherited ACL. Use `-m MODE` or `--mode=MODE` for
+explicit octal or symbolic permissions. Symbolic modes start at `0666`.
+An uppercase `X` applies only after an execute bit is already set. Special
+mode bits are rejected.
+
+`-Z` and `--context` are accepted when security labeling is inactive.
+An explicit context emits a warning in that case. Active SELinux/SMACK
+label assignment is unavailable. Windows reports that filesystem FIFO
+creation is unavailable. If a filesystem rejects the final permission
+adjustment, the command returns an error and the created FIFO remains.
+On Linux, this adjustment uses the pinned descriptor through procfs.
+
+```sh
+gutil mkfifo requests.pipe
+gutil mkfifo -m u=rw,go= request.pipe response.pipe
+```

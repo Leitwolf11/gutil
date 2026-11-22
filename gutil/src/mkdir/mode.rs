@@ -60,6 +60,7 @@ impl Classes {
 enum Permissions {
     Letters {
         ordinary: u32,
+        conditional_execute: bool,
         ids: bool,
         sticky: bool,
     },
@@ -80,7 +81,7 @@ enum Change {
     },
 }
 
-pub(super) struct Mode {
+pub(crate) struct Mode {
     changes: SmallVec<[Change; 4]>,
 }
 
@@ -92,10 +93,10 @@ pub(super) struct Evaluated {
 
 #[derive(Debug, thiserror::Error)]
 #[error("invalid permission mode")]
-pub(super) struct InvalidMode;
+pub(crate) struct InvalidMode;
 
 impl Mode {
-    pub(super) fn parse(value: &str) -> Result<Self, InvalidMode> {
+    pub(crate) fn parse(value: &str) -> Result<Self, InvalidMode> {
         if value.is_empty() {
             return Err(InvalidMode);
         }
@@ -115,10 +116,20 @@ impl Mode {
     }
 
     pub(super) fn evaluate(&self, umask: u32) -> Evaluated {
-        let mut result = Evaluated {
-            bits: 0o777,
-            affected: 0,
-        };
+        self.apply(0o777, umask, true)
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn fifo_permissions(&self, umask: u32) -> Result<u32, InvalidMode> {
+        let bits = self.apply(0o666, umask, false).bits;
+        if bits > 0o777 {
+            return Err(InvalidMode);
+        }
+        Ok(bits)
+    }
+
+    fn apply(&self, bits: u32, umask: u32, directory: bool) -> Evaluated {
+        let mut result = Evaluated { bits, affected: 0 };
         for change in &self.changes {
             match *change {
                 Change::Absolute { bits, clear_ids } => {
@@ -146,9 +157,13 @@ impl Mode {
                         }
                         Permissions::Letters {
                             ordinary,
+                            conditional_execute,
                             ids,
                             sticky,
                         } => {
+                            let execute =
+                                conditional_execute && (directory || result.bits & 0o111 != 0);
+                            let ordinary = ordinary | u32::from(execute);
                             let bits = selected.expand(ordinary)
                                 | if ids { selected.ids() } else { 0 }
                                 | if sticky { selected.sticky() } else { 0 };
@@ -165,6 +180,8 @@ impl Mode {
                     }
                     if !matches!(operator, Operator::Assign) {
                         affected = value;
+                    } else if !directory {
+                        affected |= selected.ids();
                     }
                     result.bits = match operator {
                         Operator::Add => result.bits | value,
@@ -249,13 +266,15 @@ fn letters(bytes: &[u8]) -> Result<Permissions, InvalidMode> {
         }));
     }
     let mut ordinary = 0;
+    let mut conditional_execute = false;
     let mut ids = false;
     let mut sticky = false;
     for byte in bytes {
         match byte {
             b'r' => ordinary |= 4,
             b'w' => ordinary |= 2,
-            b'x' | b'X' => ordinary |= 1,
+            b'x' => ordinary |= 1,
+            b'X' => conditional_execute = true,
             b's' => ids = true,
             b't' => sticky = true,
             _ => return Err(InvalidMode),
@@ -263,6 +282,7 @@ fn letters(bytes: &[u8]) -> Result<Permissions, InvalidMode> {
     }
     Ok(Permissions::Letters {
         ordinary,
+        conditional_execute,
         ids,
         sticky,
     })

@@ -5,12 +5,13 @@ use std::path::{Component, Path, PathBuf};
 use crate::jobs;
 use crate::presentation::{Presentation, ProgressReport};
 
-mod mode;
+pub(crate) mod mode;
 mod options;
 mod platform;
 
 use mode::Evaluated;
 use options::{Context, Options, Request};
+pub(crate) use platform::active_labels;
 
 const HELP: &str = "Usage: gutil mkdir [OPTIONS] DIRECTORY...\n\nCreate directories in operand order.\n\n  -m, --mode=MODE  Use an octal or symbolic permission mode\n  -p, --parents    Create missing parents and accept existing directories\n  -v, --verbose    Report every created directory\n  -Z               Request the default security context\n      --context[=CTX]  Request a default or explicit security context\n  -j, --jobs, --threads N  Limit runtime workers (operands stay ordered)\n      --help       Print help\n      --version    Print version\n\nParents unmask owner write/search access; inherited ACLs remain effective.\nExisting directories keep their permissions. Windows uses inherited ACLs.\nContext options are accepted on systems without active labeling; explicit\ncontexts emit a warning. Active SELinux/SMACK context assignment is unsupported.\n";
 
