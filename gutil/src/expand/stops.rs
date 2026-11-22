@@ -123,22 +123,29 @@ impl Builder {
 
 impl Stops {
     pub(super) fn next(&self, column: u64) -> io::Result<u64> {
+        match self.next_explicit(column)? {
+            Some(stop) => Ok(stop),
+            None => advance(column, 1),
+        }
+    }
+
+    pub(super) fn next_explicit(&self, column: u64) -> io::Result<Option<u64>> {
         let distance = match self {
             Self::Every(period) => period.get() - column % period.get(),
             Self::Custom { columns, remainder } => {
                 let index = columns.partition_point(|&stop| stop <= column);
                 if let Some(&stop) = columns.get(index) {
-                    return Ok(stop);
+                    return Ok(Some(stop));
                 }
                 match remainder {
-                    Remainder::SingleSpace => 1,
+                    Remainder::SingleSpace => return Ok(None),
                     Remainder::Aligned { origin, period } => {
                         period.get() - (column - origin) % period.get()
                     }
                 }
             }
         };
-        advance(column, distance)
+        advance(column, distance).map(Some)
     }
 }
 

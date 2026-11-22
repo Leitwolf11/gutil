@@ -735,3 +735,24 @@ when a preceding file lacks its final newline. Missing file operands and
 UTF-8 locales use Unicode display widths. Malformed units and other locale
 encodings follow the single-byte behavior. Input errors are reported per
 operand and subsequent files are still read. Progress goes to stderr.
+
+## unexpand
+
+`gutil unexpand [OPTIONS] [FILE]...` replaces eligible blanks with tabs.
+The default converts leading blanks at eight-column stops. Use `-a` or
+`--all` to convert across the line. `-t N` and `--tabs=LIST` also enable
+whole-line conversion. `--first-only` overrides both options regardless
+of order. The historical `-N` form changes the stops without enabling
+whole-line conversion.
+
+Tab positions use the same list, `/N`, and `+N` syntax as `expand`.
+With a finite list, later blanks are copied as written. A single interior
+blank before a stop is preserved when it is the only blank in the run.
+Backspaces are preserved and reduce the current column by one. Operands
+are read in order as one continuous stream. Use `-` for standard input,
+which is also the default when no file is given.
+
+UTF-8 locales use Unicode display widths. A replacement involving a
+multibyte blank consumes the complete character, keeping valid UTF-8
+well-formed. Other locale encodings use single-byte columns. File errors
+are reported per operand and progress reports bytes on stderr.

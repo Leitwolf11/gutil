@@ -8,12 +8,16 @@ use std::process::{Command, Output, Stdio};
 const GUTIL: &str = env!("CARGO_BIN_EXE_gutil");
 
 fn command(path: &Path, locale: &str) -> Command {
+    tab_command(path, locale, "expand")
+}
+
+fn tab_command(path: &Path, locale: &str, name: &str) -> Command {
     let mut command = Command::new(GUTIL);
     command
         .current_dir(path)
         .env("LC_ALL", locale)
         .env_remove("POSIXLY_CORRECT")
-        .args(["--no-config", "--progress=never", "--color=never", "expand"]);
+        .args(["--no-config", "--progress=never", "--color=never", name]);
     command
 }
 
@@ -293,4 +297,154 @@ fn writes_expanded_text_to_a_terminal() {
     let mut bytes = [0; 10];
     terminal.read_exact(&mut bytes).unwrap();
     assert_eq!(&bytes, b"        x\n");
+}
+
+#[test]
+fn unexpand_applies_the_selected_conversion_policy() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    let unexpand = || tab_command(path, "C", "unexpand");
+    let data = b"        abc        z\n   \txyz\n      ";
+    for flags in [&[][..], &["--first-only", "-a", "-t8"], &["-8"]] {
+        check(
+            run(&mut unexpand(), flags, data),
+            0,
+            b"\tabc        z\n\txyz\n      ",
+        );
+    }
+    let data = b"abc x\nabc  x\nabc \tx\n  x  \ty\n";
+    for flags in [&["-t4"][..], &["-4a"], &["--all", "-4"]] {
+        check(
+            run(&mut unexpand(), flags, data),
+            0,
+            b"abc x\nabc\t x\nabc\t\tx\n  x\t\ty\n",
+        );
+    }
+    check(run(&mut unexpand(), &["-2", "-3"], &[b' '; 23]), 0, b"\t");
+    check(run(&mut unexpand(), &["-1,4"], b"    abc"), 0, b"\t\tabc");
+    check(
+        run(&mut unexpand(), &["-aj2", "-t4"], b"a\0\x08    x\n"),
+        0,
+        b"a\0\x08\tx\n",
+    );
+    assert!(run(&mut unexpand(), &["--help"], b"")
+        .stdout
+        .starts_with(b"Usage: gutil unexpand "));
+    assert!(run(&mut unexpand(), &["--version"], b"")
+        .stdout
+        .starts_with(b"gutil unexpand "));
+    check(run(&mut unexpand(), &["--initial"], b""), 1, b"");
+}
+
+#[test]
+fn unexpand_keeps_valid_unicode_and_pending_blanks_between_operands() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    let unexpand = || tab_command(path, "C.UTF-8", "unexpand");
+    check(
+        run(
+            &mut unexpand(),
+            &["-t4"],
+            "abc\u{2002}  z\nabc\u{2002}z\n\u{3000}\u{3000}é\n".as_bytes(),
+        ),
+        0,
+        "abc\t  z\nabc\u{2002}z\n\té\n".as_bytes(),
+    );
+    check(
+        run(&mut unexpand(), &["-t4"], b"\xff  \tx\n"),
+        0,
+        b"\xff\tx\n",
+    );
+    fs::write(path.join("first"), b"abc ").unwrap();
+    fs::write(path.join("second"), b" x\n").unwrap();
+    let result = run(&mut unexpand(), &["-t4", "first", "missing", "second"], b"");
+    assert!(String::from_utf8_lossy(&result.stderr).contains("missing"));
+    check(result, 1, b"abc\t x\n");
+
+    let mut data = vec![b'a'; 65_538];
+    data.extend_from_slice("界    x\n".as_bytes());
+    fs::write(path.join("boundary"), &data).unwrap();
+    data.truncate(65_538 + "界".len());
+    data.extend_from_slice(b"\tx\n");
+    check(run(&mut unexpand(), &["-t8", "boundary"], b""), 0, &data);
+}
+
+#[test]
+fn unexpand_matches_gnu_on_ascii_and_utf8_tab_stops_when_configured() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    let cases = [
+        (
+            &[][..],
+            b"        xyz       abc\n   \tx\n  ".as_slice(),
+            b"\txyz       abc\n\tx\n  ".as_slice(),
+        ),
+        (
+            &["-a"][..],
+            b"abcdefg x\nabcdefg  x\nabcdefg \tx\n",
+            b"abcdefg x\nabcdefg\t x\nabcdefg\t\tx\n",
+        ),
+        (
+            &["-t3,5"][..],
+            b"abc  X     Y\n          Z\n",
+            b"abc\tX     Y\n\t\t     Z\n",
+        ),
+        (
+            &["-t3,5,+4"][..],
+            b"abc      X\n         Z\n",
+            b"abc\t\tX\n\t\t\tZ\n",
+        ),
+        (
+            &["-t3,5,/4"][..],
+            b"abc      X\n         Z\n",
+            b"abc\t\t X\n\t\t\t Z\n",
+        ),
+        (
+            &["-t4"][..],
+            b"a\0\x08    x\n\xff  \tx\n",
+            b"a\0\x08\tx\n\xff\tx\n",
+        ),
+        (
+            &["-t4"][..],
+            "界  x\n\u{3000}\u{3000}é\n".as_bytes(),
+            "界\tx\n\té\n".as_bytes(),
+        ),
+        (
+            &["-t3,6"][..],
+            "界\t   \t é\n".as_bytes(),
+            "界\t\t\t é\n".as_bytes(),
+        ),
+    ];
+    let gnu = std::env::var_os("GNU_COREUTILS_DIR").map(|root| Path::new(&root).join("unexpand"));
+    for (flags, input, expected) in cases {
+        if let Some(gnu) = &gnu {
+            let mut reference = Command::new(gnu);
+            reference
+                .env("LC_ALL", "C.UTF-8")
+                .env_remove("POSIXLY_CORRECT");
+            check(run(&mut reference, flags, input), 0, expected);
+        }
+        check(
+            run(&mut tab_command(path, "C.UTF-8", "unexpand"), flags, input),
+            0,
+            expected,
+        );
+    }
+}
+
+#[test]
+fn unexpand_batches_long_space_runs_across_reads() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = vec![b' '; 3 * 65_536 + 7];
+    let mut expected = vec![b'\t'; 3 * 65_536 / 8];
+    expected.extend_from_slice(b"       ");
+    check(
+        run(
+            &mut tab_command(directory.path(), "C", "unexpand"),
+            &[],
+            &input,
+        ),
+        0,
+        &expected,
+    );
 }

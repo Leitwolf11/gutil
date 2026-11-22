@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use crate::jobs;
 
 use super::stops::{self, Stops};
+use super::Command;
 
 pub(super) struct Options {
     pub(super) stops: Stops,
@@ -15,7 +16,7 @@ pub(super) struct Options {
 pub(super) enum Request {
     Help,
     Version,
-    Expand(Options),
+    Convert(Options),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -32,11 +33,15 @@ pub(super) enum Error {
 
 impl Request {
     pub(super) fn parse(
+        command: Command,
         mut arguments: impl Iterator<Item = OsString>,
         workers: jobs::Count,
     ) -> Result<Self, Error> {
         let mut workers = workers;
-        let mut initial = false;
+        let unexpand = command == Command::Unexpand;
+        let mut first_only = false;
+        let mut all = !unexpand;
+        let mut legacy = Vec::new();
         let mut stops = stops::Builder::default();
         let mut paths = Vec::new();
         let mut flags = true;
@@ -62,10 +67,14 @@ impl Request {
                 let matches = |option: &[u8]| !name.is_empty() && option.starts_with(name);
                 if matches(b"tabs") {
                     tabs(&mut stops, value, &mut arguments)?;
+                    all = true;
                 } else if value.is_some() {
                     return Err(Error::Option(argument));
-                } else if matches(b"initial") {
-                    initial = true;
+                } else if (!unexpand && matches(b"initial")) || (unexpand && matches(b"first-only"))
+                {
+                    first_only = true;
+                } else if unexpand && matches(b"all") {
+                    all = true;
                 } else if matches(b"help") {
                     return Ok(Self::Help);
                 } else if matches(b"version") {
@@ -77,8 +86,10 @@ impl Request {
                 for (index, &flag) in bytes[1..].iter().enumerate() {
                     let remainder = &bytes[index + 2..];
                     match flag {
-                        b'i' => initial = true,
+                        b'i' if !unexpand => first_only = true,
+                        b'a' if unexpand => all = true,
                         b't' => {
+                            all = true;
                             tabs(
                                 &mut stops,
                                 (!remainder.is_empty()).then_some(remainder),
@@ -86,6 +97,11 @@ impl Request {
                             )?;
                             break;
                         }
+                        b',' if unexpand => {
+                            stops.add(&legacy)?;
+                            legacy.clear();
+                        }
+                        b'0'..=b'9' if unexpand => legacy.push(flag),
                         b'0'..=b'9' => {
                             stops.add(&bytes[index + 1..])?;
                             break;
@@ -102,9 +118,10 @@ impl Request {
         if paths.is_empty() {
             paths.push(PathBuf::from("-"));
         }
-        Ok(Self::Expand(Options {
+        stops.add(&legacy)?;
+        Ok(Self::Convert(Options {
             stops: stops.finish()?,
-            initial,
+            initial: first_only || !all,
             paths,
             workers,
         }))
