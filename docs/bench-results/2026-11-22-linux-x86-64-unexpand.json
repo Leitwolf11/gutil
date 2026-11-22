@@ -1,0 +1,211 @@
+{
+  "date": "2026-11-22",
+  "host": {
+    "cpu": "Intel Core i5-3210M at 2.50 GHz",
+    "cores": 2,
+    "logical_cpus": 4,
+    "memory_bytes_visible": 8171552768,
+    "operating_system": "Arch Linux x86-64",
+    "kernel": "7.3.4-zen2-2-zen",
+    "executable_filesystem": "ext4",
+    "fixture_filesystem": "tmpfs",
+    "rustc": "1.100.0",
+    "llvm": "23.1.5"
+  },
+  "comparison": {
+    "profile": "release",
+    "candidate_git_revision": "3ccdc825fb09b5fb417bfa446d5683ebf513150e",
+    "gnu_coreutils_version": "9.12",
+    "gutil_options": [
+      "--no-config",
+      "--progress=never",
+      "--jobs=1"
+    ],
+    "timing": "Process startup, regular-file input and output, conversion, and exit",
+    "utility": "unexpand",
+    "gutil_executable": "target/experiments/unexpand-candidate",
+    "gnu_executable": "/usr/bin/unexpand"
+  },
+  "rounds": 12,
+  "warmup": 4,
+  "seed": 477,
+  "affinity": [
+    3
+  ],
+  "binaries": {
+    "candidate": "f18dca7720cf7062ecddc6d847846280f9a96a6179dc0577763b0250372a1b80",
+    "gnu": "f9b445f5ebc28ebacdccdac0a2a951d7b73a1a54082ad2466907295337fd4dc2"
+  },
+  "results": {
+    "ascii-leading": {
+      "locale": "C",
+      "flags": [],
+      "record": "        alpha   beta       gamma   delta                 end        alpha   beta       gamma   delta                 end        alpha   beta       gamma   delta                 end        alpha   beta       gamma   delta                 end\n",
+      "input_bytes": 16777215,
+      "output_sha256": "3425b781551a9def0422a10a235f4d0d61ea439e413e672cd49020ba3491ee80",
+      "samples_ms": {
+        "candidate": [
+          29.77718,
+          16.612435,
+          14.063803,
+          14.857439,
+          14.338145,
+          15.813663,
+          17.088695,
+          14.10274,
+          15.807501,
+          14.884808,
+          16.804012,
+          13.978675
+        ],
+        "gnu": [
+          367.454085,
+          293.3361,
+          293.343616,
+          290.905966,
+          296.743845,
+          308.974191,
+          299.815427,
+          297.817226,
+          301.515646,
+          295.712087,
+          292.354637,
+          297.154091
+        ]
+      },
+      "median_ms": {
+        "candidate": 15.3461545,
+        "gnu": 296.94896800000004
+      }
+    },
+    "ascii-all": {
+      "locale": "C",
+      "flags": [
+        "-a"
+      ],
+      "record": "        alpha   beta       gamma   delta                 end        alpha   beta       gamma   delta                 end        alpha   beta       gamma   delta                 end        alpha   beta       gamma   delta                 end\n",
+      "input_bytes": 16777215,
+      "output_sha256": "7cc0322d07c4dae3d3f58974e483e7234250189c39cf681e47701f86dd8eadc3",
+      "samples_ms": {
+        "candidate": [
+          88.370022,
+          79.459081,
+          78.04289,
+          80.605584,
+          78.503874,
+          77.648439,
+          79.64098,
+          78.083975,
+          85.246898,
+          78.330154,
+          94.563199,
+          79.202711
+        ],
+        "gnu": [
+          539.907518,
+          540.858384,
+          536.058459,
+          527.265254,
+          524.685841,
+          519.547972,
+          519.725475,
+          512.599156,
+          564.594072,
+          521.174938,
+          542.750038,
+          540.267273
+        ]
+      },
+      "median_ms": {
+        "candidate": 79.330896,
+        "gnu": 531.6618565
+      }
+    },
+    "ascii-custom": {
+      "locale": "C",
+      "flags": [
+        "-t3,11,+5"
+      ],
+      "record": "        alpha   beta       gamma   delta                 end        alpha   beta       gamma   delta                 end        alpha   beta       gamma   delta                 end        alpha   beta       gamma   delta                 end\n",
+      "input_bytes": 16777215,
+      "output_sha256": "ec1f187efbde2f3c06f97e1f69abc6bb33bd22644819a679e832fe295f992538",
+      "samples_ms": {
+        "candidate": [
+          103.295824,
+          103.323781,
+          105.368907,
+          139.845534,
+          105.434163,
+          105.512905,
+          107.593011,
+          112.744646,
+          104.393137,
+          107.970546,
+          106.191082,
+          105.290419
+        ],
+        "gnu": [
+          533.418626,
+          535.547624,
+          516.373506,
+          591.382991,
+          538.290816,
+          569.466095,
+          518.607568,
+          536.379142,
+          571.220879,
+          538.169365,
+          523.65512,
+          531.261409
+        ]
+      },
+      "median_ms": {
+        "candidate": 105.473534,
+        "gnu": 535.963383
+      }
+    },
+    "utf8-all": {
+      "locale": "C.UTF-8",
+      "flags": [
+        "-a"
+      ],
+      "record": "        caf\u00e9   \u65e5\u672c\u8a9e        \ud83e\uddea          na\u00efve      espa\u00e7os        caf\u00e9   \u65e5\u672c\u8a9e        \ud83e\uddea          na\u00efve      espa\u00e7os        caf\u00e9   \u65e5\u672c\u8a9e        \ud83e\uddea          na\u00efve      espa\u00e7os        caf\u00e9   \u65e5\u672c\u8a9e        \ud83e\uddea          na\u00efve      espa\u00e7os\n",
+      "input_bytes": 16776992,
+      "output_sha256": "b11872331ce6a1ce4a4df59c54e9407c0a776c11bdf17c5fe64efd857cb76c9f",
+      "samples_ms": {
+        "candidate": [
+          311.461638,
+          310.164391,
+          326.801043,
+          311.465587,
+          308.375383,
+          309.210603,
+          455.370077,
+          313.414689,
+          307.267865,
+          305.554984,
+          305.851204,
+          322.768076
+        ],
+        "gnu": [
+          472.669442,
+          472.089913,
+          496.392149,
+          547.230919,
+          481.582554,
+          531.566198,
+          476.982234,
+          464.409916,
+          472.520582,
+          481.570461,
+          477.408394,
+          471.833115
+        ]
+      },
+      "median_ms": {
+        "candidate": 310.8130145,
+        "gnu": 477.195314
+      }
+    }
+  }
+}
