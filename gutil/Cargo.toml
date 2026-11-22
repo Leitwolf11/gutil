@@ -1,6 +1,6 @@
 [package]
 name = "gutil"
-version = "0.18.0"
+version = "0.20.0"
 edition.workspace = true
 description = "A single-binary, cross-platform reimplementation of GNU coreutils"
 license.workspace = true
@@ -41,14 +41,15 @@ getrandom = { version = "0.4", features = ["std"] }
 regex = "1"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.32", default-features = false, features = ["fs", "term"] }
+nix = { version = "0.32", default-features = false, features = ["feature", "fs", "term"] }
 signal-hook = { version = "0.4", default-features = false }
 rustix = { version = "1.1", features = ["fs"] }
 
-[target.'cfg(not(target_os = "linux"))'.dependencies]
+[target.'cfg(not(any(target_os = "linux", windows)))'.dependencies]
 sysinfo = { version = "0.40.4", default-features = false, features = ["disk"] }
 
 [target.'cfg(windows)'.dependencies]
+sysinfo = { version = "0.40.4", default-features = false, features = ["disk", "system"] }
 io-close = "0.3.7"
 fs4 = { version = "1.1", default-features = false }
 atomicwrites = "0.4.4"

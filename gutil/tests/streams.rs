@@ -427,3 +427,41 @@ fn counts_c_locale_words_across_read_boundaries() {
     verify(run(path, &["wc", "-w", "--total=only"], &input), b"5\n");
     verify(run(path, &["wc", "-w", "--total=only"], b""), b"0\n");
 }
+
+#[test]
+fn counts_utf8_across_ascii_and_split_multibyte_reads() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    // The separator starts at the end of the first read. A later word
+    // crosses from a decoded multibyte block into an entirely ASCII block.
+    let mut input = vec![b'x'; 64 * 1024 + 3];
+    input.extend_from_slice("\u{a0}é".as_bytes());
+    input.extend(std::iter::repeat_n(b'y', 2 * 64 * 1024));
+    input.extend_from_slice(b"\x0bword\nlast");
+    fs::write(path.join("input"), &input).unwrap();
+
+    for (flags, expected) in [
+        ("-wm", format!("4 {}\n", input.len() - 2)),
+        ("-m", format!("{}\n", input.len() - 2)),
+        ("-w", String::from("4\n")),
+    ] {
+        let output = command(path, &["wc", flags, "--total=only", "input"])
+            .env("LC_ALL", "C.UTF-8")
+            .env_remove("POSIXLY_CORRECT")
+            .output()
+            .unwrap();
+        verify(output, expected.as_bytes());
+    }
+}
+
+#[test]
+fn keeps_word_state_across_malformed_utf8_spans() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    fs::write(path.join("input"), b"\xffabc \xc3\xa9\xffz \xe2\x82").unwrap();
+    let output = command(path, &["wc", "-wm", "--total=only", "input"])
+        .env("LC_ALL", "C.UTF-8")
+        .output()
+        .unwrap();
+    verify(output, b"3 7\n");
+}

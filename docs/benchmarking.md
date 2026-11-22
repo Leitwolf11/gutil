@@ -42,8 +42,10 @@ Compare timings from the same run. Long-format results include metadata formatti
 
 - [2026-11-19 · Linux x86-64 · directory creation](bench-results/2026-11-19-linux-x86-64-mkdir.md)
 - [2026-11-19 · Linux x86-64 · temporary object creation](bench-results/2026-11-19-linux-x86-64-mktemp.md)
+- [2026-11-20 · Linux x86-64 · mktemp release profiles](bench-results/2026-11-20-linux-x86-64-mktemp-release-profiles.md)
 - [2026-11-20 · Linux x86-64 · terminal detection](bench-results/2026-11-20-linux-x86-64-tty.md)
 - [2026-11-19 · Linux x86-64 · directory permission hardening](bench-results/2026-11-19-linux-x86-64-mkdir-permissions.md)
+- [2026-11-20 · Linux x86-64 · system identity](bench-results/2026-11-20-linux-x86-64-system-identity.md)
 
 ## Checksum throughput
 
@@ -84,6 +86,8 @@ stdout byte for byte before timing each GNU pair. Timed iterations include
 process startup and discard stdout. The piped `tail` workload includes
 copying the file into the child process's stdin. The `pwd` workload runs
 from the fixture directory and reads no fixture data.
+
+[Linux x86-64 mixed UTF-8 wc comparison](bench-results/2026-11-22-linux-x86-64-wc-utf8-mixed.md)
 
 ## Path commands
 
