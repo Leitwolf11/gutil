@@ -67,53 +67,47 @@ impl Request {
                 workers = count?;
                 continue;
             }
-            match bytes {
-                b"--" => flags = false,
-                [b'-', b'-', long @ ..] => {
-                    let (name, value) = long
-                        .iter()
-                        .position(|&byte| byte == b'=')
-                        .map_or((long, None), |index| {
-                            (&long[..index], Some(&long[index + 1..]))
+            if bytes == b"--" {
+                flags = false;
+            } else if let Some(long) = bytes.strip_prefix(b"--") {
+                let (name, value) = long
+                    .iter()
+                    .position(|&byte| byte == b'=')
+                    .map_or((long, None), |index| {
+                        (&long[..index], Some(&long[index + 1..]))
+                    });
+                let abbreviated = |option: &[u8]| !name.is_empty() && option.starts_with(name);
+                match name {
+                    _ if abbreviated(b"help") && value.is_none() => return Ok(Self::Help),
+                    _ if abbreviated(b"version") && value.is_none() => return Ok(Self::Version),
+                    _ if abbreviated(b"mode") => {
+                        mode = Some(option_value(value, &mut args)?);
+                    }
+                    _ if abbreviated(b"context") => {
+                        context = value.map_or(Context::Default, |value| {
+                            Context::Explicit(String::from_utf8_lossy(value).into_owned())
                         });
-                    let abbreviated = |option: &[u8]| !name.is_empty() && option.starts_with(name);
-                    match name {
-                        _ if abbreviated(b"help") && value.is_none() => return Ok(Self::Help),
-                        _ if abbreviated(b"version") && value.is_none() => {
-                            return Ok(Self::Version)
+                    }
+                    _ => return Err(ParseError::Option(argument)),
+                }
+            } else {
+                let short = &bytes[1..];
+                for (index, flag) in short.iter().enumerate() {
+                    let rest = &short[index + 1..];
+                    match flag {
+                        b'Z' => context = Context::Default,
+                        b'm' => {
+                            mode =
+                                Some(option_value((!rest.is_empty()).then_some(rest), &mut args)?);
+                            break;
                         }
-                        _ if abbreviated(b"mode") => {
-                            mode = Some(option_value(value, &mut args)?);
-                        }
-                        _ if abbreviated(b"context") => {
-                            context = value.map_or(Context::Default, |value| {
-                                Context::Explicit(String::from_utf8_lossy(value).into_owned())
-                            });
+                        b'j' => {
+                            workers = jobs::short_value(rest, &mut args)?;
+                            break;
                         }
                         _ => return Err(ParseError::Option(argument)),
                     }
                 }
-                [b'-', short @ ..] => {
-                    for (index, flag) in short.iter().enumerate() {
-                        let rest = &short[index + 1..];
-                        match flag {
-                            b'Z' => context = Context::Default,
-                            b'm' => {
-                                mode = Some(option_value(
-                                    (!rest.is_empty()).then_some(rest),
-                                    &mut args,
-                                )?);
-                                break;
-                            }
-                            b'j' => {
-                                workers = jobs::short_value(rest, &mut args)?;
-                                break;
-                            }
-                            _ => return Err(ParseError::Option(argument)),
-                        }
-                    }
-                }
-                _ => return Err(ParseError::Option(argument)),
             }
         }
         if paths.is_empty() {
@@ -169,22 +163,13 @@ pub(crate) fn run(
 
 fn create(options: Options, ui: Presentation) -> io::Result<u8> {
     let mut errors = io::stderr();
-    if !matches!(options.context, Context::Inherited) {
-        if crate::mkdir::active_labels()? {
-            let _ = ui.error(
-                &mut errors,
-                LABEL,
-                "SELinux/SMACK context assignment is unavailable",
-            );
-            return Ok(1);
-        }
-        if let Context::Explicit(context) = &options.context {
-            let _ = ui.warning(
-                &mut errors,
-                LABEL,
-                &format!("security labeling is unavailable; ignoring context {context:?}"),
-            );
-        }
+    if !context_ready(
+        &options.context,
+        crate::mkdir::active_labels,
+        ui,
+        &mut errors,
+    )? {
+        return Ok(1);
     }
     #[cfg(unix)]
     {
@@ -210,4 +195,41 @@ fn create(options: Options, ui: Presentation) -> io::Result<u8> {
         );
         Ok(1)
     }
+}
+
+fn context_ready(
+    context: &Context,
+    probe: impl FnOnce() -> io::Result<bool>,
+    ui: Presentation,
+    errors: &mut impl Write,
+) -> io::Result<bool> {
+    if matches!(context, Context::Inherited) {
+        return Ok(true);
+    }
+    if probe()? {
+        let _ = ui.error(
+            errors,
+            LABEL,
+            "SELinux/SMACK context assignment is unavailable",
+        );
+        return Ok(false);
+    }
+    if let Context::Explicit(context) = context {
+        let _ = ui.warning(
+            errors,
+            LABEL,
+            &format!("security labeling is unavailable; ignoring context {context:?}"),
+        );
+    }
+    Ok(true)
+}
+
+#[cfg(test)]
+#[test]
+fn active_labeling_rejects_context_options_before_creation() {
+    let ui = Presentation::new(&crate::config::Settings::default());
+    let mut errors = Vec::new();
+    let result = context_ready(&Context::Default, || Ok(true), ui, &mut errors);
+    assert!(matches!(result, Ok(false)));
+    assert!(String::from_utf8_lossy(&errors).contains("context assignment is unavailable"));
 }

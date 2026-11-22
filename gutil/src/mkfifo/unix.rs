@@ -156,3 +156,22 @@ fn adjust_permissions(
 
     fchmodat(directory, name, permissions, FchmodatFlags::NoFollowSymlink).map_err(io::Error::from)
 }
+
+#[cfg(all(test, target_os = "linux"))]
+#[allow(clippy::unwrap_used)]
+#[test]
+fn permission_adjustment_rejects_replaced_objects() {
+    let directory = tempfile::tempdir().unwrap();
+    let ordinary = directory.path().join("file");
+    std::fs::write(&ordinary, b"original").unwrap();
+    let mode = Mode::from_bits_truncate(0o600);
+    assert!(set_permissions(AT_FDCWD, ordinary.as_os_str(), mode).is_err());
+
+    let checked = directory.path().join("checked");
+    let replacement = directory.path().join("replacement");
+    mkfifo(&checked, mode).unwrap();
+    mkfifo(&replacement, mode).unwrap();
+    let metadata = fstatat(AT_FDCWD, &checked, AtFlags::AT_SYMLINK_NOFOLLOW).unwrap();
+    assert!(adjust_permissions(AT_FDCWD, replacement.as_os_str(), &metadata, mode).is_err());
+    assert_eq!(std::fs::read(ordinary).unwrap(), b"original");
+}
