@@ -187,23 +187,17 @@ fn create(options: Options, ui: Presentation) -> io::Result<u8> {
         }
     }
     #[cfg(unix)]
-    match unix::prepare(options.mode.as_ref()) {
-        Ok(permissions) => {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .max_blocking_threads(options.workers.get())
-                .build()?;
-            runtime.block_on(async move {
-                tokio::task::spawn_blocking(move || {
-                    unix::create_all(&options.paths, permissions, ui)
-                })
-                .await
-                .map_err(io::Error::other)
+    {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(options.workers.get())
+            .build()?;
+        runtime.block_on(async move {
+            tokio::task::spawn_blocking(move || {
+                unix::create_all(&options.paths, options.mode.as_ref(), ui)
             })
-        }
-        Err(error) => {
-            let _ = ui.error(&mut errors, LABEL, &error.to_string());
-            Ok(1)
-        }
+            .await
+            .map_err(io::Error::other)
+        })
     }
 
     #[cfg(not(unix))]

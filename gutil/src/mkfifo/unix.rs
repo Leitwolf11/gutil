@@ -10,24 +10,42 @@ use super::LABEL;
 use crate::mkdir::mode::{InvalidMode, Mode as PermissionExpr};
 use crate::presentation::Presentation;
 
+struct CreationMask(Mode);
+
+impl Drop for CreationMask {
+    fn drop(&mut self) {
+        umask(self.0);
+    }
+}
+
 #[allow(
     clippy::unnecessary_cast,
     clippy::cast_lossless,
     clippy::cast_possible_truncation,
     reason = "Unix mode_t varies by platform. FIFO permission bits fit every supported mode_t."
 )]
-pub(super) fn prepare(mode: Option<&PermissionExpr>) -> Result<Option<Mode>, InvalidMode> {
-    mode.map(|mode| {
-        let original = umask(Mode::empty());
-        umask(original);
-        mode.fifo_permissions(original.bits() as u32)
-            .map(|permissions| Mode::from_bits_truncate(permissions as _))
-    })
-    .transpose()
+fn prepare(mode: &PermissionExpr) -> Result<(Mode, CreationMask), InvalidMode> {
+    // This ordered worker is the only thread creating filesystem objects.
+    // Apply the requested mode at creation and let the kernel inherit ACLs.
+    let mask = CreationMask(umask(Mode::empty()));
+    let bits = mode.fifo_permissions(mask.0.bits() as u32)?;
+    Ok((Mode::from_bits_truncate(bits as _), mask))
 }
 
-pub(super) fn create_all(paths: &[PathBuf], mode: Option<Mode>, ui: Presentation) -> u8 {
+pub(super) fn create_all(
+    paths: &[PathBuf],
+    requested: Option<&PermissionExpr>,
+    ui: Presentation,
+) -> u8 {
     let mut errors = stderr().lock();
+    let explicit = match requested.map(prepare).transpose() {
+        Ok(permissions) => permissions,
+        Err(error) => {
+            let _ = ui.error(&mut errors, LABEL, &error.to_string());
+            return 1;
+        }
+    };
+    let mode = explicit.as_ref().map(|(mode, _mask)| *mode);
     let mut progress = ui.progress(LABEL, "FIFOs", true);
     let mut status = 0;
     for path in paths {
