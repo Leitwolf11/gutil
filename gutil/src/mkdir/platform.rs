@@ -209,7 +209,7 @@ impl<'a> Entry<'a> {
     clippy::unnecessary_wraps,
     reason = "The capability interface is fallible on Linux and shared across native platforms."
 )]
-pub(super) fn active_labels() -> io::Result<bool> {
+pub(crate) fn active_labels() -> io::Result<bool> {
     #[cfg(target_os = "linux")]
     {
         active_labels_at(
