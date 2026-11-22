@@ -21,6 +21,7 @@ mod pwd;
 mod shell;
 mod tee;
 mod tty;
+mod uniq;
 mod wc;
 
 use std::cell::LazyCell;
@@ -33,7 +34,7 @@ use presentation::Presentation;
 use std::io::{self, BufWriter, IsTerminal, Write};
 use std::process::ExitCode;
 
-const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  arch, uname  Report machine and system information\n  base32, base64  Encode or decode data\n  df, duf  Report mounted filesystem usage\n  fd       Find files and directories\n  fold     Wrap input lines\n  link, ln, unlink  Create links or remove file names\n  mkdir    Create directories\n  mktemp   Create temporary files or directories\n  rmdir    Remove empty directories\n  truncate  Adjust file sizes\n  basename  Print the final component of a path\n  dirname   Print the directory portion of a path\n  readlink  Print symbolic link targets\n  realpath  Print resolved paths\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  paste    Merge corresponding records from files\n  head     Print the beginning of files\n  tail     Print the end of files\n  tee      Copy standard input to files and standard output\n  wc       Count lines, words, and bytes\n  md5sum   Print or verify MD5 checksums\n  sha1sum  Print or verify SHA-1 checksums\n  sha224sum, sha256sum, sha384sum, sha512sum  Print or verify SHA-2 checksums\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n  echo, yes          Write text\n  false, true        Return a fixed exit status\n  nproc, printenv    Report processor or environment information\n  sleep              Pause for a duration\n  tty                Report the standard input terminal\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
+const HELP: &str = "Usage: gutil [OPTIONS] <COMMAND> [ARGUMENTS]\n\nCommands:\n  arch, uname  Report machine and system information\n  base32, base64  Encode or decode data\n  df, duf  Report mounted filesystem usage\n  fd       Find files and directories\n  fold     Wrap input lines\n  link, ln, unlink  Create links or remove file names\n  mkdir    Create directories\n  mktemp   Create temporary files or directories\n  rmdir    Remove empty directories\n  truncate  Adjust file sizes\n  basename  Print the final component of a path\n  dirname   Print the directory portion of a path\n  readlink  Print symbolic link targets\n  realpath  Print resolved paths\n  cache    Store and retrieve content by digest\n  cat      Concatenate files\n  paste    Merge corresponding records from files\n  head     Print the beginning of files\n  tail     Print the end of files\n  tee      Copy standard input to files and standard output\n  uniq     Filter adjacent repeated records\n  wc       Count lines, words, and bytes\n  md5sum   Print or verify MD5 checksums\n  sha1sum  Print or verify SHA-1 checksums\n  sha224sum, sha256sum, sha384sum, sha512sum  Print or verify SHA-2 checksums\n  ls       List directory contents\n  plug-in  Install or run external plug-ins\n  pwd      Print the working directory\n  echo, yes          Write text\n  false, true        Return a fixed exit status\n  nproc, printenv    Report processor or environment information\n  sleep              Pause for a duration\n  tty                Report the standard input terminal\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n  -j, --jobs, --threads N        Limit concurrent filesystem jobs\n      --config PATH              Read a specific TOML file\n      --no-config                Skip configuration lookup\n      --profile NAME             Apply a named configuration profile\n      --progress=MODE            auto, never, or always\n      --color=MODE               auto, never, or always\n      --hyperlinks=MODE          auto, never, or always\n";
 
 fn main() -> ExitCode {
     // Discard argv[0] and preserve non-UTF-8 filesystem operands.
@@ -79,6 +80,7 @@ enum Command {
     Shell(shell::Command),
     Tee,
     Tty,
+    Uniq,
     Wc,
     Help,
     Version,
@@ -115,6 +117,7 @@ impl Command {
             Some("pwd") => Self::Pwd,
             Some("tee") => Self::Tee,
             Some("tty") => Self::Tty,
+            Some("uniq") => Self::Uniq,
             Some("wc") => Self::Wc,
             Some("-h" | "--help") => Self::Help,
             Some("-V" | "--version") => Self::Version,
@@ -203,6 +206,7 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
         Command::Edge(edge) => return edges::run(edge, args, *job_count, ui),
         Command::Encoding(base) => return encoding::run(base, args, *job_count, ui),
         Command::Tee => return tee::run(args, *job_count, ui),
+        Command::Uniq => return uniq::run(args, *job_count, ui),
         Command::Wc => return wc::run(args, *job_count, ui),
         Command::Shell(command) => return shell::run(command, args, ui),
         Command::Tty => return Ok(tty::run(args, ui)),
@@ -309,6 +313,7 @@ fn direct_help_or_version(command: Command, option: Option<&str>) -> bool {
             | Command::Shell(_)
             | Command::Tee
             | Command::Tty
+            | Command::Uniq
             | Command::Wc
     ) && (matches!(option, Some("--help" | "--version"))
         || (matches!(command, Command::Cache | Command::Plugin | Command::Fd)
