@@ -345,3 +345,30 @@ fn units(record: &[u8]) -> impl Iterator<Item = Range<usize>> + '_ {
         Some(range)
     })
 }
+
+#[cfg(test)]
+#[test]
+fn raw_separator_respects_utf8_character_boundaries() {
+    let separator = Splitter::Byte(0xa9);
+    assert_eq!(separator.next(b"\xc3\xa9a\xa9b", true), Some(3..4));
+    assert_eq!(separator.next(b"\xc3\xa9a\xa9b", false), Some(1..2));
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+#[test]
+fn rejects_a_byte_offset_that_cannot_represent_the_record_length() {
+    let options = Options {
+        mode: Mode::Bytes,
+        ranges: Vec::new(),
+        separator: None,
+        terminator: b'\n',
+        paths: Vec::new(),
+        workers: crate::jobs::Count::DEFAULT_AUTO_LIMIT,
+        utf8: false,
+    };
+    let mut record = Records::new(&options);
+    record.byte_offset = usize::MAX;
+    let error = record.record(b"x", false, &mut Vec::new()).unwrap_err();
+    assert_eq!(error.to_string(), "record is too long");
+}

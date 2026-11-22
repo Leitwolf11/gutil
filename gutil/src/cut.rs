@@ -136,3 +136,46 @@ fn copy_records(
     records.finish(output)?;
     Ok(error)
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+#[test]
+fn retries_an_interrupted_read_and_reports_input_failure() {
+    use std::io::Read;
+
+    struct Input(u8);
+
+    impl Read for Input {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            self.0 += 1;
+            match self.0 {
+                1 => Err(io::ErrorKind::Interrupted.into()),
+                2 => b"ab\n".as_slice().read(buffer),
+                _ => Err(io::ErrorKind::InvalidData.into()),
+            }
+        }
+    }
+
+    let options = Options {
+        mode: options::Mode::Bytes,
+        ranges: std::iter::once(0..1).collect(),
+        separator: None,
+        terminator: b'\n',
+        paths: Vec::new(),
+        workers: jobs::Count::DEFAULT_AUTO_LIMIT,
+        utf8: false,
+    };
+    let mut output = Vec::new();
+    let error = copy_records(
+        &mut BufReader::new(Input(0)),
+        &mut Records::new(&options),
+        &mut Vec::new(),
+        &mut output,
+        &mut None,
+        &mut Vec::new(),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(output, b"a\n");
+}

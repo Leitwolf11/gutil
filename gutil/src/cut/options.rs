@@ -202,53 +202,40 @@ impl Parser {
         option: &OsString,
         args: &mut impl Iterator<Item = OsString>,
     ) -> Result<Option<Request>, Error> {
-        if flag.requires_value() {
-            let mut value = match value {
-                Some(value) => value.to_vec(),
-                None => args
-                    .next()
-                    .ok_or_else(|| Error::MissingValue(option.clone()))?
-                    .into_encoded_bytes(),
-            };
-            match flag {
-                Flag::Delimiter | Flag::OutputDelimiter => {
-                    if value.is_empty() {
-                        value.push(0);
-                    }
-                    if flag == Flag::Delimiter {
-                        self.delim = Some(value);
-                    } else {
-                        self.output = Some(value);
-                    }
+        if value.is_some() && !flag.requires_value() && flag != Flag::Whitespace {
+            return Err(Error::Option(option.clone()));
+        }
+        match flag {
+            Flag::Bytes | Flag::Characters | Flag::Fields | Flag::BlankFields => {
+                if self.selection.is_some() {
+                    return Err(Error::RepeatedSelection);
                 }
-                _ => {
-                    if self.selection.is_some() {
-                        return Err(Error::RepeatedSelection);
-                    }
-                    self.selection = Some((flag, value));
+                self.selection = Some((flag, required_value(value, option, args)?));
+            }
+            Flag::Delimiter | Flag::OutputDelimiter => {
+                let mut delimiter = required_value(value, option, args)?;
+                if delimiter.is_empty() {
+                    delimiter.push(0);
+                }
+                if flag == Flag::Delimiter {
+                    self.delim = Some(delimiter);
+                } else {
+                    self.output = Some(delimiter);
                 }
             }
-        } else if flag == Flag::Whitespace {
-            match value {
+            Flag::Whitespace => match value {
                 None => self.whitespace = Some(false),
                 Some(value) if !value.is_empty() && b"trimmed".starts_with(value) => {
                     self.whitespace = Some(true);
                 }
                 _ => return Err(Error::Option(option.clone())),
-            }
-        } else {
-            if value.is_some() {
-                return Err(Error::Option(option.clone()));
-            }
-            match flag {
-                Flag::Help => return Ok(Some(Request::Help)),
-                Flag::Version => return Ok(Some(Request::Version)),
-                Flag::NoPartial => self.no_partial = true,
-                Flag::OnlyDelimited => self.suppress = true,
-                Flag::Zero => self.terminator = 0,
-                Flag::Complement => self.complement = true,
-                _ => return Err(Error::Option(option.clone())),
-            }
+            },
+            Flag::Help => return Ok(Some(Request::Help)),
+            Flag::Version => return Ok(Some(Request::Version)),
+            Flag::NoPartial => self.no_partial = true,
+            Flag::OnlyDelimited => self.suppress = true,
+            Flag::Zero => self.terminator = 0,
+            Flag::Complement => self.complement = true,
         }
         Ok(None)
     }
@@ -314,4 +301,19 @@ impl Parser {
             terminator: self.terminator,
         })
     }
+}
+
+fn required_value(
+    value: Option<&[u8]>,
+    option: &OsString,
+    args: &mut impl Iterator<Item = OsString>,
+) -> Result<Vec<u8>, Error> {
+    value.map_or_else(
+        || {
+            args.next()
+                .map(OsString::into_encoded_bytes)
+                .ok_or_else(|| Error::MissingValue(option.clone()))
+        },
+        |bytes| Ok(bytes.to_vec()),
+    )
 }

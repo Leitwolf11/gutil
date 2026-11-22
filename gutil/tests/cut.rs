@@ -67,6 +67,48 @@ fn sorts_ranges_keeps_adjacent_boundaries_and_complements_selection() {
 }
 
 #[test]
+fn handles_empty_selections_and_unterminated_blank_records() {
+    check(
+        run(&mut command("C"), &["-b1-", "--complement"], b"ab"),
+        0,
+        b"\n",
+    );
+    check(run(&mut command("C.UTF-8"), &["-c9"], b"ab\n"), 0, b"\n");
+    check(
+        run(&mut command("C.UTF-8"), &["-c1,3,8"], "🧪aé\n".as_bytes()),
+        0,
+        "🧪é\n".as_bytes(),
+    );
+    check(
+        run(
+            &mut command("C.UTF-8"),
+            &["-f2", "--whitespace-delimited=trimmed"],
+            "\u{2003} \n\u{3000}".as_bytes(),
+        ),
+        0,
+        b"\n",
+    );
+}
+
+#[test]
+fn reports_a_closed_output_pipe() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("data");
+    fs::write(&path, vec![b'x'; 1024 * 1024]).unwrap();
+    let mut child = command("C")
+        .arg("-b1-")
+        .arg(path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    let result = child.wait_with_output().unwrap();
+    assert!(result.stderr.starts_with(b"gutil cut:"));
+    check(result, 1, b"");
+}
+
+#[test]
 fn selects_utf8_characters_and_whole_units_from_byte_suffixes() {
     let data = "aé界x\n".as_bytes();
     for (flags, expected) in [
@@ -176,7 +218,7 @@ fn processes_long_records_and_continues_after_a_missing_operand() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path();
     let mut long = vec![b'x'; 65_535];
-    long.extend_from_slice("界selected".as_bytes());
+    long.extend_from_slice("界selected\n".as_bytes());
     fs::write(path.join("long"), &long).unwrap();
     fs::write(path.join("-last"), b"a\tb").unwrap();
     let mut selected = vec![b'x'; 65_534];
@@ -214,6 +256,8 @@ fn rejects_invalid_combinations_and_keeps_progress_on_stderr() {
         &[][..],
         &["-b"],
         &["-b0"],
+        &["-b1x"],
+        &["--complement=yes"],
         &["-b1, 2"],
         &["-b-"],
         &["-b3-2"],
