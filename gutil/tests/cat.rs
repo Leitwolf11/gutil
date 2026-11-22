@@ -93,6 +93,35 @@ fn rejects_the_same_regular_file_as_input_and_output() {
     assert_eq!(fs::read(path).unwrap(), b"original");
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn preserves_append_and_virtual_file_fallbacks() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path();
+    fs::write(path.join("input"), b"file\0payload").unwrap();
+    fs::write(path.join("output"), b"prefix\n").unwrap();
+    let sink = File::options()
+        .append(true)
+        .open(path.join("output"))
+        .unwrap();
+    let result = command(path, &["--progress=never", "cat", "input"])
+        .stdout(sink)
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{result:?}");
+    assert_eq!(
+        fs::read(path.join("output")).unwrap(),
+        b"prefix\nfile\0payload"
+    );
+
+    let virtual_file = "/proc/sys/kernel/ostype";
+    if let Ok(bytes) = fs::read(virtual_file) {
+        let result = run(path, &["--progress=never", "cat", virtual_file], b"");
+        assert!(result.status.success(), "{result:?}");
+        assert_eq!(result.stdout, bytes);
+    }
+}
+
 #[test]
 fn exposes_command_help_and_version() {
     let directory = tempfile::tempdir().unwrap();
