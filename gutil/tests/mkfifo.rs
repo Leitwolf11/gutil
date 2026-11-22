@@ -92,6 +92,8 @@ mod unix {
             (&["-m", "u+x,g+X"], 0o776),
             (&["-m", "u=r,g=u,o="], 0o440),
             (&["-m", "u+x,u-X"], 0o666),
+            (&["-m", "a+s,a=rw"], 0o666),
+            (&["-m", "=s,u-x,=s,a=g"], 0),
             (&["--jobs=2", "-m", "bad", "--mode=600"], 0o600),
         ] {
             let flags = ["--no-config", "--progress=never", "mkfifo"];

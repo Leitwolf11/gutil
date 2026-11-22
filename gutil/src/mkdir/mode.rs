@@ -180,6 +180,8 @@ impl Mode {
                     }
                     if !matches!(operator, Operator::Assign) {
                         affected = value;
+                    } else if !directory {
+                        affected |= selected.ids();
                     }
                     result.bits = match operator {
                         Operator::Add => result.bits | value,
