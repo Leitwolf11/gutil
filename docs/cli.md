@@ -716,3 +716,22 @@ The command preserves the original bytes and terminates the final record.
 Unlike GNU uniq, gutil rejects an input and output referring to the same
 regular file, including hard-link aliases and redirected standard streams.
 The optional progress stream reports records on stderr.
+
+## expand
+
+`gutil expand [OPTIONS] [FILE]...` replaces tabs with spaces. The default
+tab width is eight columns. Use `-t N`, `--tabs=N`, or the historical
+`-N` form for a different width. A comma- or blank-separated list specifies
+absolute tab columns. A final `/N` resumes at multiples of N from column
+zero, and a final `+N` repeats at intervals of N after the last explicit
+stop. A finite list replaces tabs beyond the final stop with one space.
+
+`-i` converts only tabs before the first nonblank character on each line.
+Backspaces are preserved and move the current column back one position.
+Newlines reset the column. Operands form one continuous stream, including
+when a preceding file lacks its final newline. Missing file operands and
+`-` select standard input.
+
+UTF-8 locales use Unicode display widths. Malformed units and other locale
+encodings follow the single-byte behavior. Input errors are reported per
+operand and subsequent files are still read. Progress goes to stderr.
