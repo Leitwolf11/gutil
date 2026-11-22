@@ -11,63 +11,26 @@ static SPACES: [u8; 8192] = [b' '; 8192];
 
 pub(super) struct Expander<'a> {
     options: &'a Options,
-    utf8: bool,
     column: u64,
     convert: bool,
 }
 
 impl<'a> Expander<'a> {
     pub(super) fn new(options: &'a Options) -> Self {
-        let utf8 = ["LC_ALL", "LC_CTYPE", "LANG"]
-            .into_iter()
-            .filter_map(|key| std::env::var(key).ok())
-            .find(|value| !value.is_empty())
-            .is_some_and(|value| {
-                let value = value.to_ascii_lowercase();
-                value.contains("utf-8") || value.contains("utf8")
-            });
         Self {
             options,
-            utf8,
             column: 0,
             convert: true,
         }
     }
 
-    pub(super) fn copy(
+    pub(super) fn process(
         &mut self,
-        input: &mut impl Read,
+        bytes: &[u8],
+        utf8: bool,
         output: &mut impl Write,
-        buffer: &mut [u8],
-        progress: &mut Option<ProgressReport>,
-        errors: &mut impl Write,
-    ) -> io::Result<Option<io::Error>> {
-        let mut carry = 0;
-        let error = loop {
-            let length = match input.read(&mut buffer[carry..]) {
-                Ok(0) => break None,
-                Ok(length) => length,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) => break Some(error),
-            };
-            let end = carry + length;
-            carry = if self.utf8 {
-                partial_scalar(&buffer[..end])
-            } else {
-                0
-            };
-            self.process(&buffer[..end - carry], output)?;
-            buffer.copy_within(end - carry..end, 0);
-            if let Some(progress) = progress {
-                progress.advance(length as u64, errors);
-            }
-        };
-        self.process(&buffer[..carry], output)?;
-        Ok(error)
-    }
-
-    fn process(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
-        if !self.utf8 || bytes.is_ascii() {
+    ) -> io::Result<()> {
+        if !utf8 || bytes.is_ascii() {
             self.single_byte(bytes, output)
         } else {
             self.unicode(bytes, output)
@@ -136,12 +99,7 @@ impl<'a> Expander<'a> {
                         if self.options.initial && !horizontal_blank(character) {
                             self.convert = false;
                         } else {
-                            let width = match character {
-                                '\0' => 0,
-                                '\u{ad}' => 1,
-                                _ => character.width().unwrap_or(1),
-                            };
-                            self.column = advance(self.column, width as u64)?;
+                            self.column = advance(self.column, display_width(character))?;
                         }
                     }
                 }
@@ -173,8 +131,60 @@ impl<'a> Expander<'a> {
     }
 }
 
-fn horizontal_blank(character: char) -> bool {
+pub(super) fn copy_input<W: Write>(
+    input: &mut impl Read,
+    output: &mut W,
+    buffer: &mut [u8],
+    progress: &mut Option<ProgressReport>,
+    errors: &mut impl Write,
+    utf8: bool,
+    mut process: impl FnMut(&[u8], &mut W) -> io::Result<()>,
+) -> io::Result<Option<io::Error>> {
+    let mut carry = 0;
+    let error = loop {
+        let length = match input.read(&mut buffer[carry..]) {
+            Ok(0) => break None,
+            Ok(length) => length,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => break Some(error),
+        };
+        let end = carry + length;
+        carry = if utf8 {
+            partial_scalar(&buffer[..end])
+        } else {
+            0
+        };
+        process(&buffer[..end - carry], output)?;
+        buffer.copy_within(end - carry..end, 0);
+        if let Some(progress) = progress {
+            progress.advance(length as u64, errors);
+        }
+    };
+    process(&buffer[..carry], output)?;
+    Ok(error)
+}
+
+pub(super) fn utf8_locale() -> bool {
+    ["LC_ALL", "LC_CTYPE", "LANG"]
+        .into_iter()
+        .filter_map(|key| std::env::var(key).ok())
+        .find(|value| !value.is_empty())
+        .is_some_and(|value| {
+            let value = value.to_ascii_lowercase();
+            value.contains("utf-8") || value.contains("utf8")
+        })
+}
+
+pub(super) fn horizontal_blank(character: char) -> bool {
     matches!(character, ' ' | '\t' | '\u{1680}' | '\u{2000}'..='\u{2006}' | '\u{2008}'..='\u{200a}' | '\u{205f}' | '\u{3000}')
+}
+
+pub(super) fn display_width(character: char) -> u64 {
+    match character {
+        '\0' => 0,
+        '\u{ad}' => 1,
+        _ => character.width().unwrap_or(1) as u64,
+    }
 }
 
 fn partial_scalar(bytes: &[u8]) -> usize {
@@ -216,21 +226,28 @@ fn retries_an_interrupted_read_before_reporting_the_next_error() {
         }
     }
 
-    let request = Request::parse(std::iter::empty(), Count::DEFAULT_AUTO_LIMIT).unwrap();
-    let Request::Expand(options) = request else {
+    let request = Request::parse(
+        super::Command::Expand,
+        std::iter::empty(),
+        Count::DEFAULT_AUTO_LIMIT,
+    )
+    .unwrap();
+    let Request::Convert(options) = request else {
         panic!("default options must request expansion");
     };
     let mut output = Vec::new();
-    let error = Expander::new(&options)
-        .copy(
-            &mut FailingReader(false),
-            &mut output,
-            &mut [0; 8],
-            &mut None,
-            &mut Vec::new(),
-        )
-        .unwrap()
-        .unwrap();
+    let mut expander = Expander::new(&options);
+    let error = copy_input(
+        &mut FailingReader(false),
+        &mut output,
+        &mut [0; 8],
+        &mut None,
+        &mut Vec::new(),
+        true,
+        |bytes, output| expander.process(bytes, true, output),
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(error.kind(), io::ErrorKind::InvalidData);
     assert_eq!(output, b"");
 }
