@@ -677,3 +677,22 @@ requested explicitly and omitted in the combined modes.
 Unix uses the running kernel's system identification fields. On Windows,
 the kernel name is `Windows_NT`, the release is the OS version, and the
 kernel version field is the build number. The OS label is `Windows`.
+
+## paste
+
+`gutil paste [OPTIONS] [FILE]...` merges corresponding records with tab
+separators. Shorter inputs contribute empty columns. `-` reads the shared
+standard input stream, and no files defaults to standard input.
+
+`-s` or `--serial` merges records within each file, producing one result
+record per input. `-z` or `--zero-terminated` uses NUL instead of newline
+for input and output records. `-d LIST` or `--delimiters=LIST` cycles through
+the list for each row or serial file. Recognized escapes are `\0` (no
+delimiter), `\b`, `\f`, `\n`, `\r`, `\t`, `\v`, and `\\`.
+Other escaped characters are copied literally. GNU-compatible delimiter
+units are bytes in the C locale and characters in UTF-8 locales. Windows
+uses Unicode delimiter characters.
+
+An input open failure in parallel mode prevents output. Serial mode
+reports a failed file and continues. Both modes retain record order and
+send optional progress to standard error.

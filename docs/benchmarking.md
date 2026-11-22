@@ -264,3 +264,5 @@ settings. Process startup and captured output are timed; fixture setup,
 cleanup, and complete object-state verification are excluded. Raw samples
 retain binary hashes and paired elapsed-time reductions. Use a fixed CPU
 budget when comparing small invocation costs and keep slower cases visible.
+
+[Linux x86-64 regular-file paste comparison](bench-results/2026-11-20-linux-x86-64-paste.md)

@@ -8,7 +8,7 @@ aliases and platform-dependent commands remain part of the target.
 [Upstream program list](https://github.com/coreutils/coreutils/blob/v9.12/build-aux/gen-lists-of-programs.sh)
 · [Installed-name transformation](https://github.com/coreutils/coreutils/blob/v9.12/src/local.mk#L374-L384)
 
-The default branch currently provides 37 of these 108 command names. The
+The default branch currently provides 38 of these 108 command names. The
 count follows merged code. The table records available commands and the
 remaining implementation work. Available commands implement the behavior
 listed in the command reference, and their presence does not imply complete
@@ -20,6 +20,7 @@ GNU option coverage or a demonstrated performance advantage.
 | --- | --- | --- |
 | Directory listings | `ls` | Name-only and long-format benchmarks against GNU. |
 | Streams and counts | `cat`, `head`, `tail`, `tee`, `wc` | Regular-file and pipe comparisons against GNU. |
+| Text layout | `paste` | Serial and parallel records, native input bytes, and GNU comparisons. |
 | Paths | `basename`, `dirname`, `pwd`, `readlink`, `realpath` | Documented path behavior and GNU comparisons. |
 | Checksums | `md5sum`, `sha1sum`, `sha224sum`, `sha256sum`, `sha384sum`, `sha512sum` | GNU output checks and multi-file benchmarks. |
 | Base encoding | `base32`, `base64` | Encoding and wrapped-decoding comparisons against GNU. |
@@ -33,14 +34,14 @@ GNU option coverage or a demonstrated performance advantage.
 
 ## Remaining commands
 
-These groups contain the remaining 71 names. A pull request may implement
+These groups contain the remaining 70 names. A pull request may implement
 one command or a small coherent subset of a group. The grouping does not
 require a single pull request for every command in a row.
 
 | Group | Commands |
 | --- | --- |
 | Text comparison and ordering | `comm`, `join`, `sort`, `tsort`, `uniq` |
-| Text layout and fields | `cut`, `expand`, `fmt`, `fold`, `nl`, `paste`, `pr`, `ptx`, `tr`, `unexpand` |
+| Text layout and fields | `cut`, `expand`, `fmt`, `fold`, `nl`, `pr`, `ptx`, `tr`, `unexpand` |
 | Stream transformation and splitting | `csplit`, `dd`, `od`, `split`, `tac` |
 | File copying and removal | `cp`, `install`, `mv`, `rm`, `shred` |
 | File and directory creation | `mkfifo`, `mknod`, `touch` |
