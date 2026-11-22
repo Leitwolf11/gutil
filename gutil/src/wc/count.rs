@@ -61,7 +61,7 @@ pub(super) fn read(
         column: 0,
     };
     let mut pending = 0;
-    let byte_words = !locale.unicode && metrics & (WORDS | CHARS | WIDTH) == WORDS;
+    let byte_counts = metrics & WIDTH == 0 && metrics & (WORDS | CHARS) != 0;
     loop {
         let length = match input.read(&mut buffer[pending..]) {
             Ok(0) => break,
@@ -75,8 +75,13 @@ pub(super) fn read(
             counter.counts.lines +=
                 memchr::memchr_iter(b'\n', &buffer[pending..end]).count() as u64;
         }
-        if byte_words {
-            counter.counts.words += byte_word_starts(&buffer[..end], &mut counter.word);
+        if byte_counts && (!locale.unicode || (pending == 0 && buffer[..end].is_ascii())) {
+            if metrics & WORDS != 0 {
+                counter.counts.words += byte_word_starts(&buffer[..end], &mut counter.word);
+            }
+            if metrics & CHARS != 0 {
+                counter.counts.chars += length as u64;
+            }
         } else if metrics & !(LINES | BYTES) != 0 {
             if locale.unicode {
                 pending = counter.utf8(&buffer[..end]);
@@ -157,13 +162,25 @@ impl Counter {
     }
 
     fn text(&mut self, text: &str) {
+        if self.metrics & WIDTH == 0 {
+            if self.metrics & CHARS != 0 {
+                self.counts.chars += text.chars().count() as u64;
+            }
+            if self.metrics & WORDS != 0 {
+                let mut in_word = self.word;
+                let mut words = 0;
+                for character in text.chars() {
+                    let next = !unicode_space(character, self.locale.gnu_space);
+                    words += u64::from(!in_word & next);
+                    in_word = next;
+                }
+                self.counts.words += words;
+                self.word = in_word;
+            }
+            return;
+        }
         for character in text.chars() {
-            let width = if self.metrics & WIDTH == 0 {
-                None
-            } else {
-                character.width()
-            };
-            self.character(character, width);
+            self.character(character, character.width());
         }
     }
 
@@ -172,13 +189,11 @@ impl Counter {
             self.counts.chars += 1;
         }
         if self.metrics & WORDS != 0 {
-            let space = matches!(character, ' ' | '\t'..='\r')
-                || (self.locale.unicode
-                    && match character {
-                        '\u{00a0}' | '\u{2007}' | '\u{202f}' | '\u{2060}' => self.locale.gnu_space,
-                        '\u{0085}' => false,
-                        _ => character.is_whitespace(),
-                    });
+            let space = if self.locale.unicode {
+                unicode_space(character, self.locale.gnu_space)
+            } else {
+                matches!(character, ' ' | '\t'..='\r')
+            };
             if space {
                 self.word = false;
             } else {
@@ -202,5 +217,14 @@ impl Counter {
             self.counts.words += 1;
             self.word = true;
         }
+    }
+}
+
+fn unicode_space(character: char, gnu_space: bool) -> bool {
+    match character {
+        '\x00'..='\x7f' => matches!(character, ' ' | '\t'..='\r'),
+        '\u{00a0}' | '\u{2007}' | '\u{202f}' | '\u{2060}' => gnu_space,
+        '\u{0085}' => false,
+        _ => character.is_whitespace(),
     }
 }

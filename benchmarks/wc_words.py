@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare C-locale wc word counting with an earlier gutil and GNU wc."""
+"""Compare wc word and character counting with an earlier gutil and GNU wc."""
 
 import argparse
 import hashlib
@@ -24,6 +24,7 @@ def main():
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--gnu", type=Path, default=Path("/usr/bin/wc"))
+    parser.add_argument("--utf8", action="store_true", help="Measure word and character counts in C.UTF-8")
     options = parser.parse_args()
     binaries = {
         "baseline": valid_executable(options.baseline),
@@ -37,12 +38,26 @@ def main():
         fixture = Path(directory) / "input"
         pattern = b"alpha beta\tword\vlast\n multiple   spaces \r\n"
         size = 16 * 1024 * 1024
-        fixture.write_bytes((pattern * (size // len(pattern) + 1))[:size])
-        for case, flags, locale in [
-            ("words", ["-w"], "C"),
-            ("default", [], "C"),
-            ("utf8-words", ["-w"], "C.UTF-8"),
-        ]:
+        cases = [
+            ("words", ["-w"], "C", pattern),
+            ("default", [], "C", pattern),
+            ("utf8-words", ["-w"], "C.UTF-8", pattern),
+        ]
+        if options.utf8:
+            mixed = "café mundo\t日本語 autre\n".encode()
+            cases = [
+                ("utf8-ascii-words", ["-w"], "C.UTF-8", pattern),
+                ("utf8-ascii-words-chars", ["-wm"], "C.UTF-8", pattern),
+                ("utf8-mixed-words", ["-w"], "C.UTF-8", mixed),
+                ("utf8-mixed-chars", ["-m"], "C.UTF-8", mixed),
+                ("utf8-mixed-words-chars", ["-wm"], "C.UTF-8", mixed),
+            ]
+        for case, flags, locale, fixture_pattern in cases:
+            fixture.write_bytes((fixture_pattern * (size // len(fixture_pattern) + 1))[:size])
+            if options.utf8:
+                # Truncate the final sequence cleanly while keeping the file size fixed.
+                data = fixture.read_bytes().decode("utf-8", errors="ignore").encode()
+                fixture.write_bytes(data.ljust(size, b" "))
             environment = dict(os.environ, LC_ALL=locale, TZ="UTC")
             samples = {label: [] for label in binaries}
             expected = None
@@ -71,6 +86,7 @@ def main():
             results[case] = {
                 "flags": flags,
                 "locale": locale,
+                "fixture_pattern": fixture_pattern.decode(),
                 "samples_ms": samples,
                 "median_ms": {label: statistics.median(times) for label, times in samples.items()},
             }
@@ -80,7 +96,6 @@ def main():
             "seed": 42,
             "affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
             "fixture_bytes": size,
-            "fixture_pattern": pattern.decode(),
             "binaries": {k: hashlib.sha256(p.read_bytes()).hexdigest() for k,p in binaries.items()},
             "results": results,
         }, indent=2))
