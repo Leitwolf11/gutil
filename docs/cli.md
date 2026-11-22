@@ -678,5 +678,5 @@ and limiting. The C locale uses bytes. `-z` uses NUL record boundaries.
 The command preserves the original bytes and terminates the final record.
 
 Unlike GNU uniq, gutil rejects an input and output referring to the same
-regular file before truncation, including hard-link aliases. The optional
-progress stream reports records on stderr.
+regular file, including hard-link aliases and redirected standard streams.
+The optional progress stream reports records on stderr.

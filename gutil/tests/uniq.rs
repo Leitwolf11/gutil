@@ -58,9 +58,20 @@ fn filters_only_adjacent_groups_and_terminates_partial_records() {
         (&["--all-repeated=separate"], b"a\na\n\nc\nc\n"),
         (&["--all-repeated=prepend"], b"\na\na\n\nc\nc\n"),
         (&["--all-repeated=none"], b"a\na\nc\nc\n"),
+        (&["--all-repeated"], b"a\na\nc\nc\n"),
+        (&["-D"], b"a\na\nc\nc\n"),
     ] {
         expect(&run(&mut command(fixture.path()), args, input), 0, expected);
     }
+    expect(
+        &run(
+            &mut command(fixture.path()),
+            &["--all-repeated"],
+            b"a\na\na\nb",
+        ),
+        0,
+        b"a\na\na\n",
+    );
 }
 
 #[test]
@@ -120,6 +131,45 @@ fn selects_key_bytes_and_utf8_characters_and_preserves_records() {
 }
 
 #[test]
+fn handles_long_options_and_clamps_skips_to_short_records() {
+    let fixture = tempfile::tempdir().unwrap();
+    let path = fixture.path();
+    expect(
+        &run(
+            &mut command(path),
+            &[
+                "--jobs=2",
+                "--skip-fields",
+                "1",
+                "--ignore-case",
+                "--zero-terminated",
+            ],
+            b"1 A\x002 a\x003 B",
+        ),
+        0,
+        b"1 A\x003 B\x00",
+    );
+    expect(
+        &run(
+            command(path).env("LC_ALL", "C.UTF-8"),
+            &["-j2", "--skip-chars=1"],
+            "🧪a\néa\n界b".as_bytes(),
+        ),
+        0,
+        "🧪a\n界b\n".as_bytes(),
+    );
+    expect(
+        &run(
+            command(path).env("LC_ALL", "C.UTF-8"),
+            &["-ij2", "-f2", "-s4"],
+            "界\né\n\n".as_bytes(),
+        ),
+        0,
+        "界\n".as_bytes(),
+    );
+}
+
+#[test]
 fn writes_regular_output_and_rejects_aliases_without_truncating() {
     let fixture = tempfile::tempdir().unwrap();
     let path = fixture.path();
@@ -137,6 +187,12 @@ fn writes_regular_output_and_rejects_aliases_without_truncating() {
     let missing = run(&mut command(path), &["missing", "out"], b"");
     expect(&missing, 1, b"");
     assert_eq!(fs::read(path.join("out")).unwrap(), b"a\nb\n");
+    fs::write(path.join("-input"), b"two\ntwo").unwrap();
+    expect(
+        &run(&mut command(path), &["--", "-input"], b""),
+        0,
+        b"two\n",
+    );
 }
 
 #[test]
@@ -158,7 +214,37 @@ fn rejects_regular_aliases_through_standard_streams() {
     let result = command(path).arg("data").stdout(output).output().unwrap();
     expect(&result, 1, b"");
     assert!(String::from_utf8_lossy(&result.stderr).contains("same file"));
+
+    let input = fs::File::open(&file).unwrap();
+    let output = fs::OpenOptions::new().append(true).open(&file).unwrap();
+    let result = command(path).stdin(input).stdout(output).output().unwrap();
+    expect(&result, 1, b"");
+    assert!(String::from_utf8_lossy(&result.stderr).contains("same file"));
     assert_eq!(fs::read(&file).unwrap(), b"a\na\nb\n");
+}
+
+#[test]
+fn reports_input_errors_and_keeps_progress_off_stdout() {
+    let fixture = tempfile::tempdir().unwrap();
+    let path = fixture.path();
+    fs::create_dir(path.join("directory")).unwrap();
+    let result = run(&mut command(path), &["directory"], b"");
+    expect(&result, 1, b"");
+    assert!(String::from_utf8_lossy(&result.stderr).contains("directory"));
+    #[cfg(unix)]
+    expect(
+        &run(&mut command(path), &["-", "/dev/null"], b"a\na\nb"),
+        0,
+        b"",
+    );
+
+    let mut progress = Command::new(env!("CARGO_BIN_EXE_gutil"));
+    progress
+        .current_dir(path)
+        .args(["--no-config", "--progress=always", "--color=never", "uniq"]);
+    let result = run(&mut progress, &[], b"first\nfirst\nlast");
+    expect(&result, 0, b"first\nlast\n");
+    assert!(String::from_utf8_lossy(&result.stderr).contains("records"));
 }
 
 #[test]
@@ -175,6 +261,7 @@ fn rejects_incompatible_and_malformed_options() {
         &["--skip-chars=foo"],
         &["-q"],
         &["--c"],
+        &["--unique=yes"],
         &["a", "b", "c"],
     ] {
         let output = run(&mut command(path), args, b"");

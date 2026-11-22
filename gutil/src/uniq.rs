@@ -60,6 +60,12 @@ fn execute(options: &Options, ui: Presentation) -> io::Result<()> {
                 let input_id = same_file::Handle::from_file(input.try_clone()?)?;
                 reject_same(&input_id, &same_file::Handle::stdout()?)?;
             }
+        } else if let (Ok(input), Ok(output)) =
+            (same_file::Handle::stdin(), same_file::Handle::stdout())
+        {
+            if input == output && input.as_file().metadata()?.is_file() {
+                reject_same(&input, &output)?;
+            }
         }
         None
     } else {
