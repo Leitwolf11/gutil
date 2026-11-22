@@ -360,6 +360,15 @@ fn unexpand_keeps_valid_unicode_and_pending_blanks_between_operands() {
         0,
         b"abc\xff  \tx\n",
     );
+    check(
+        run(
+            &mut unexpand(),
+            &["-a"],
+            "       \u{3000}x      y\n1234567\u{3000}x      y\n".as_bytes(),
+        ),
+        0,
+        "       \u{3000}x\ty\n1234567\u{3000}x\ty\n".as_bytes(),
+    );
     fs::write(path.join("first"), b"abc ").unwrap();
     fs::write(path.join("second"), b" x\n").unwrap();
     let result = run(&mut unexpand(), &["-t4", "first", "missing", "second"], b"");

@@ -754,5 +754,6 @@ which is also the default when no file is given.
 
 UTF-8 locales use Unicode display widths. A replacement involving a
 multibyte blank consumes the complete character, keeping valid UTF-8
-well-formed. Other locale encodings use single-byte columns. File errors
+well-formed. A blank that spans a tab stop is copied to preserve its
+display width. Other locale encodings use single-byte columns. File errors
 are reported per operand and progress reports bytes on stderr.

@@ -174,7 +174,11 @@ impl<'a> Unexpander<'a> {
         } else {
             advance(self.column, width)?
         };
-        if tab || (self.previous_blank && self.column >= stop) {
+        if self.column > stop {
+            // A tab alone would drop the columns beyond this stop.
+            self.finish(output)?;
+            output.write_all(unit)?;
+        } else if tab || (self.previous_blank && self.column == stop) {
             self.write_tab(output)?;
         } else {
             if self.column == stop {
