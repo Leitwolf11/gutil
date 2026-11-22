@@ -1,6 +1,6 @@
 [package]
 name = "gutil"
-version = "0.17.0"
+version = "0.19.0"
 edition.workspace = true
 description = "A single-binary, cross-platform reimplementation of GNU coreutils"
 license.workspace = true
@@ -41,7 +41,7 @@ getrandom = { version = "0.4", features = ["std"] }
 regex = "1"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.32", default-features = false, features = ["feature", "fs"] }
+nix = { version = "0.32", default-features = false, features = ["feature", "fs", "term"] }
 signal-hook = { version = "0.4", default-features = false }
 rustix = { version = "1.1", features = ["fs"] }
 

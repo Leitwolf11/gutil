@@ -42,8 +42,9 @@ Compare timings from the same run. Long-format results include metadata formatti
 
 - [2026-11-19 · Linux x86-64 · directory creation](bench-results/2026-11-19-linux-x86-64-mkdir.md)
 - [2026-11-19 · Linux x86-64 · temporary object creation](bench-results/2026-11-19-linux-x86-64-mktemp.md)
-- [2026-11-20 · Linux x86-64 · system identity](bench-results/2026-11-20-linux-x86-64-system-identity.md)
+- [2026-11-20 · Linux x86-64 · terminal detection](bench-results/2026-11-20-linux-x86-64-tty.md)
 - [2026-11-19 · Linux x86-64 · directory permission hardening](bench-results/2026-11-19-linux-x86-64-mkdir-permissions.md)
+- [2026-11-20 · Linux x86-64 · system identity](bench-results/2026-11-20-linux-x86-64-system-identity.md)
 
 ## Checksum throughput
 
