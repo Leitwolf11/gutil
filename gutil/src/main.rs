@@ -197,7 +197,7 @@ fn run(args: impl Iterator<Item = OsString>) -> io::Result<u8> {
                 result => result,
             }
         }
-        Command::Plugin => return plugin::run(args, ui),
+        Command::Plugin => return plugin::run(args, &settings.registries, ui),
         Command::Mkdir => return mkdir::run(args, *job_count, ui),
         Command::Mktemp => return mktemp::run(args, *job_count, ui),
         Command::Mutate(command) => return mutate::run(command, args, *job_count, ui),

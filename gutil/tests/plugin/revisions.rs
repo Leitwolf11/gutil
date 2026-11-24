@@ -86,14 +86,18 @@ fn installs_the_selected_tag_or_commit_and_never_falls_back_to_head() {
     ] {
         let home = tempdir().unwrap();
         let directory = home.path();
-        let output = install_command(directory, repository, "pinned-owner/pinned-repo")
-            .args([
-                "plug-in",
-                "install",
-                &format!("github.com:pinned-owner/pinned-repo@{selector}"),
-            ])
-            .output()
-            .unwrap();
+        let output = install_command(
+            directory,
+            repository,
+            "https://github.com/pinned-owner/pinned-repo",
+        )
+        .args([
+            "plug-in",
+            "install",
+            &format!("github.com:pinned-owner/pinned-repo@{selector}"),
+        ])
+        .output()
+        .unwrap();
         if let Some(expected) = expected {
             success(&output);
             let launched = gutil(directory)

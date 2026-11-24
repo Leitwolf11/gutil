@@ -36,7 +36,7 @@ fn git(directory: &Path, args: &[&str]) {
     success(&output);
 }
 
-fn install_command(directory: &Path, repository: &Path, github_repository: &str) -> Command {
+fn install_command(directory: &Path, repository: &Path, git_url: &str) -> Command {
     let url = reqwest::Url::from_directory_path(repository).unwrap();
     let mut command = gutil(directory);
     command
@@ -47,10 +47,7 @@ fn install_command(directory: &Path, repository: &Path, github_repository: &str)
         .env_remove("RUSTC_WRAPPER")
         .env("GIT_CONFIG_COUNT", "1")
         .env("GIT_CONFIG_KEY_0", format!("url.{url}.insteadOf"))
-        .env(
-            "GIT_CONFIG_VALUE_0",
-            format!("https://github.com/{github_repository}"),
-        );
+        .env("GIT_CONFIG_VALUE_0", git_url);
     command
 }
 
@@ -67,7 +64,11 @@ fn validates_syntax_and_reports_uninstalled_commands() {
         &["plug-in", "install", "github.com:owner/repo@"],
         &["plug-in", "install", "github.com:owner/repo@v4..old"],
         &["plug-in", "use", "../command"],
-        &["plug-in", "use", "MixedCase"],
+        &[
+            "plug-in",
+            "install",
+            "sparse-index:crates.example.org/index",
+        ],
     ] {
         let result = gutil(dir).args(args).output().unwrap();
         assert_eq!(result.status.code(), Some(2));
@@ -116,12 +117,16 @@ fn packaged_cli_fixture_resolves_sdk_from_the_registry() {
 }
 
 fn create_fixture(repo: &Path) {
+    create_named_fixture(repo, "gutil-plugin-command");
+}
+
+fn create_named_fixture(repo: &Path, binary: &str) {
     let sdk = Path::new(env!("CARGO_MANIFEST_DIR")).with_file_name("gutil-plugin-sdk");
     let dependency = fixture_dependency(&sdk);
     fs::write(
         repo.join("Cargo.toml"),
         format!(
-            "[package]\nname = 'gutil-plugin-command'\nversion = '0.1.0'\nedition = '2021'\n[dependencies]\ngutil-plugin-sdk = {dependency}\n"
+            "[package]\nname = 'gutil-plugin-command'\nversion = '0.1.0'\nedition = '2021'\n[dependencies]\ngutil-plugin-sdk = {dependency}\n[[bin]]\nname = '{binary}'\npath = 'src/main.rs'\n"
         ),
     )
     .unwrap();
@@ -184,7 +189,7 @@ fn installs_and_launches_a_rust_plug_in() {
     let repo = fixture.path();
     create_fixture(repo);
     let install = || {
-        install_command(dir, repo, "fixture-owner/fixture-repo")
+        install_command(dir, repo, "https://github.com/fixture-owner/fixture-repo")
             .args([
                 "plug-in",
                 "install",
@@ -272,4 +277,51 @@ fn assert_guest_io(dir: &Path) {
     let output = child.wait_with_output().unwrap();
     success(&output);
     assert_eq!(output.stdout, b"cwd input\nstdin input\n");
+}
+
+#[test]
+fn installs_and_runs_local_and_other_hosted_plugins_with_cargo_target_names() {
+    let fixture = tempdir().unwrap();
+    let repository = fixture.path().join("plug-in fixture");
+    fs::create_dir(&repository).unwrap();
+    let name = "9_Mixed_Name";
+    create_named_fixture(&repository, &format!("gutil-{name}"));
+    for (url, args) in [
+        (
+            "https://gitlab.com/group/subgroup/plugin",
+            &["plug-in", "install", "gitlab.com:group/subgroup/plugin"][..],
+        ),
+        (
+            "https://bitbucket.org/workspace/plugin",
+            &["plug-in", "bitbucket.org:workspace/plugin"],
+        ),
+    ] {
+        let home = tempdir().unwrap();
+        let installed = install_command(home.path(), &repository, url)
+            .args(args)
+            .output()
+            .unwrap();
+        success(&installed);
+        let output = gutil(home.path())
+            .args(["plug-in", "use", name, "example"])
+            .output()
+            .unwrap();
+        success(&output);
+        assert_eq!(output.stdout, b"example\n");
+    }
+    let output = install_command(
+        fixture.path(),
+        &repository,
+        "https://github.com/unused/plugin",
+    )
+    .args(["plug-in", "install", "local:plug-in fixture"])
+    .output()
+    .unwrap();
+    success(&output);
+    let output = gutil(fixture.path())
+        .args(["plug-in", "use", name, "local"])
+        .output()
+        .unwrap();
+    success(&output);
+    assert_eq!(output.stdout, b"local\n");
 }
