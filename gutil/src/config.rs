@@ -252,7 +252,7 @@ pub(crate) struct Settings {
     pub(crate) cat: Cat,
     pub(crate) pwd: Pwd,
     pub(crate) cache: Cache,
-    #[serde(rename = "registeries", alias = "registries")]
+    #[serde(rename = "registeries")]
     pub(crate) registries: Registries,
 }
 

@@ -136,7 +136,7 @@ impl InstallSource {
 }
 
 fn required_suffix(argument: &OsStr, prefix: &str) -> Result<OsString, ParseError> {
-    let suffix = native_suffix(argument, prefix.len())?;
+    let suffix = native_suffix(argument, prefix)?;
     if suffix.is_empty() {
         return Err(ParseError::Source);
     }
@@ -144,33 +144,33 @@ fn required_suffix(argument: &OsStr, prefix: &str) -> Result<OsString, ParseErro
 }
 
 #[cfg(unix)]
-fn native_suffix(argument: &OsStr, start: usize) -> Result<OsString, ParseError> {
+fn native_suffix(argument: &OsStr, prefix: &str) -> Result<OsString, ParseError> {
     use std::os::unix::ffi::OsStrExt;
 
     argument
         .as_bytes()
-        .get(start..)
+        .get(prefix.len()..)
         .map(OsStr::from_bytes)
         .map(OsStr::to_owned)
         .ok_or(ParseError::Source)
 }
 
 #[cfg(windows)]
-fn native_suffix(argument: &OsStr, start: usize) -> Result<OsString, ParseError> {
+fn native_suffix(argument: &OsStr, prefix: &str) -> Result<OsString, ParseError> {
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
     let units: Vec<_> = argument.encode_wide().collect();
     units
-        .get(start..)
+        .get(prefix.encode_utf16().count()..)
         .map(OsString::from_wide)
         .ok_or(ParseError::Source)
 }
 
 #[cfg(not(any(unix, windows)))]
-fn native_suffix(argument: &OsStr, start: usize) -> Result<OsString, ParseError> {
+fn native_suffix(argument: &OsStr, prefix: &str) -> Result<OsString, ParseError> {
     argument
         .to_str()
-        .and_then(|value| value.get(start..))
+        .and_then(|value| value.get(prefix.len()..))
         .map(OsString::from)
         .ok_or(ParseError::Source)
 }

@@ -124,6 +124,7 @@ fn resolves_an_explicit_sparse_index_and_a_configured_alias() {
     let settings: crate::config::Settings = toml::from_str(
         r#"[registeries]
 "example.org" = "sparse+https://crates.example.org"
+"örnek.example.org" = "sparse+https://crates.example.org/index"
 "#,
     )
     .unwrap();
@@ -138,6 +139,11 @@ fn resolves_an_explicit_sparse_index_and_a_configured_alias() {
             "example.org:Plugin_Name@1.2.3",
             None,
             "sparse+https://crates.example.org/",
+        ),
+        (
+            "örnek.example.org:Plugin_Name@1.2.3",
+            None,
+            "sparse+https://crates.example.org/index/",
         ),
     ] {
         let source =
