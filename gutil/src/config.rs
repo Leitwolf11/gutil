@@ -240,6 +240,8 @@ impl Default for Cache {
     }
 }
 
+pub(crate) type Registries = rustc_hash::FxHashMap<String, String>;
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub(crate) struct Settings {
@@ -250,6 +252,8 @@ pub(crate) struct Settings {
     pub(crate) cat: Cat,
     pub(crate) pwd: Pwd,
     pub(crate) cache: Cache,
+    #[serde(rename = "registeries", alias = "registries")]
+    pub(crate) registries: Registries,
 }
 
 #[derive(Default)]

@@ -100,11 +100,12 @@ The local cache is enabled by default. An enabled remote cache can serve local m
 
 ## plug-in
 
-`gutil plug-in install github.com:OWNER/REPOSITORY[@TAG|@COMMIT]` builds and
-installs a Rust plug-in from GitHub. Omit the selector for the default branch,
-use `@v4` for a tag, or append a commit hash to pin a revision.
-`gutil plug-in use COMMAND [ARGUMENTS]...` runs the
-installed command and forwards every remaining argument to it.
+`gutil plug-in install SOURCE [name:PACKAGE]` builds a Rust plug-in from
+GitHub, GitLab, Bitbucket, a local path, crates.io, or a sparse registry.
+Use `@v4` for a Git tag or append a commit hash to pin a revision.
+Configured registry aliases use `ALIAS:PACKAGE`.
+`gutil plug-in use COMMAND [ARGUMENTS]...` runs the installed plug-in
+and forwards every remaining argument to it.
 [Plug-in installation and SDK](plug-ins.md)
 
 ## Checksums
