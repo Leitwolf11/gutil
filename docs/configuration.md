@@ -65,6 +65,18 @@ The options `--layout=MODE`, `--hidden=MODE`, `--sort=MODE`, `--quote=MODE`, `--
 
 `mode` accepts `"physical"` or `"logical"`. Physical is the built-in default.
 
+## Plug-in registries
+
+Map an alias to a Cargo sparse index. The alias is used before the
+package name in `gutil plug-in install example.org:plugin`.
+
+```toml
+[registeries]
+"example.org" = "sparse+https://crates.example.org"
+```
+
+[Plug-in installation examples](plug-ins.md)
+
 ## Cache
 
 The `cache` command stores immutable blobs by SHA-256. Cache settings apply to explicit `cache put` and `cache get` calls. Profiles can override any of these settings.

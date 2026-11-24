@@ -1,26 +1,49 @@
 # Plug-ins
 
-Install a Rust plug-in from a GitHub repository using Cargo:
+Install a Rust plug-in using Cargo.
 
 ```sh
-gutil plug-in install github.com:owner/extension
 gutil plug-in install github.com:owner/extension@v4
 gutil plug-in install github.com:owner/extension@abcdef0123456789abcdef0123456789abcdef0123
+gutil plug-in install gitlab.com:owner/repo
+gutil plug-in install bitbucket.org:owner/repo
+gutil plug-in bitbucket.org:owner/repo
+gutil plug-in install local:/home/user/Projects/plugin
+gutil plug-in install crates.io:gutil-example
+gutil plug-in install sparse-index:crates.example.org/index name:plugin
 gutil plug-in use plugin-command --example-flag example-argument
 ```
 
-The installed Cargo package must provide exactly one binary target named
-`gutil-<command>`. For example, the binary target `gutil-plugin-command`
-registers the command `plugin-command`. A command starts with a lowercase
-ASCII letter and can contain lowercase ASCII letters, digits, and hyphens.
+A sparse index contains multiple packages. Supply `name:PACKAGE` after
+the index. You can append `@VERSION` to a registry package specification.
+Relative local paths resolve from the current directory.
 
-Installation requires GitHub access, Cargo, and the `wasm32-wasip1` target.
+Define a reusable sparse index alias in `gutil.toml` or your user
+configuration.
+
+```toml
+[registeries]
+"example.org" = "sparse+https://crates.example.org"
+```
+
+```sh
+gutil plug-in install example.org:plugin
+```
+
+The installed Cargo package must provide exactly one binary target named
+`gutil-<command>`. For example, a binary named `gutil-Plugin_Name`
+registers `Plugin_Name`. Cargo validates package and target names. gutil
+uses the binary suffix as the command name and preserves it as one
+native file name.
+
+Installation requires Cargo and the `wasm32-wasip1` target. Hosted sources
+and registries also require access to the selected server.
 
 ```sh
 rustup target add wasm32-wasip1
 ```
 
-Without a selector, Cargo builds the GitHub repository's default branch into
+Without a selector, Cargo builds the Git repository's default branch into
 a WASI module. Add `@v4` to build the tag `v4`, or append a commit hash to
 build that revision. Hexadecimal selectors of 7 through 40 characters select
 commits, including unambiguous abbreviated hashes. Other selectors are Git

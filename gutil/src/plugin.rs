@@ -13,42 +13,57 @@ use crate::presentation::Presentation;
 
 mod source;
 
-use source::GitHubSource;
+use source::InstallSource;
 
 const LABEL: &str = "gutil plug-in";
 const BINARY_PREFIX: &str = "gutil-";
 const MODULE_SUFFIX: &str = ".wasm";
 const WASI_TARGET: &str = "wasm32-wasip1";
-const HELP: &str = "Usage: gutil plug-in install github.com:OWNER/REPOSITORY[@TAG|@COMMIT]\n       gutil plug-in use COMMAND [ARGUMENTS]...\n\nInstall a Rust plug-in from GitHub or run an installed plug-in.\nUse @v4 to select a tag or @<commit-hash> to select a commit.\nUse @refs/tags/NAME for an explicit tag selector.\nOmit the selector to build the repository's default branch.\nThe binary target must be named gutil-<command> and compile for wasm32-wasip1.\n";
+const HELP: &str = "Usage: gutil plug-in install SOURCE [name:PACKAGE]\n       gutil plug-in use COMMAND [ARGUMENTS]...\n\nSources:\n  github.com:OWNER/REPO[@TAG|@COMMIT]\n  gitlab.com:GROUP/REPO[@TAG|@COMMIT]\n  bitbucket.org:WORKSPACE/REPO[@TAG|@COMMIT]\n  local:PATH\n  crates.io:PACKAGE[@VERSION]\n  sparse-index:HOST/PATH name:PACKAGE[@VERSION]\n  ALIAS:PACKAGE[@VERSION]  Read ALIAS from [registeries]\n\nUse @refs/tags/NAME for an explicit Git tag. The binary target must be\nnamed gutil-<command> and compile for wasm32-wasip1.\n";
 
 enum Request {
     Help,
     Version,
-    Install(GitHubSource),
+    Install(InstallSource),
     Use(PluginCommand, Vec<OsString>),
 }
 
 #[derive(Debug, thiserror::Error)]
 enum ParseError {
-    #[error("expected 'install github.com:OWNER/REPOSITORY[@TAG|@COMMIT]' or 'use COMMAND' (see 'gutil plug-in --help')")]
+    #[error(
+        "expected 'install SOURCE [name:PACKAGE]' or 'use COMMAND' (see 'gutil plug-in --help')"
+    )]
     Usage,
-    #[error("expected a GitHub source in the form github.com:OWNER/REPOSITORY[@TAG|@COMMIT]")]
+    #[error("invalid plug-in source (see 'gutil plug-in --help')")]
     Source,
+    #[error("a sparse index requires name:PACKAGE after the index URL")]
+    MissingPackage,
     #[error("expected a valid Git tag or commit hash after '@'")]
     Revision,
-    #[error("plug-in command names must start with a lowercase ASCII letter and contain only lowercase ASCII letters, digits, and hyphens")]
+    #[error("a plug-in command must be a nonempty name that fits in one file name")]
     Command,
 }
 
 impl Request {
-    fn parse(mut args: impl Iterator<Item = OsString>) -> Result<Self, ParseError> {
-        match args.next().as_deref().and_then(OsStr::to_str) {
+    fn parse(
+        mut args: impl Iterator<Item = OsString>,
+        registries: &config::Registries,
+    ) -> Result<Self, ParseError> {
+        let action = args.next().ok_or(ParseError::Usage)?;
+        match action.to_str() {
             Some("-h" | "--help") => Ok(Self::Help),
             Some("--version") => Ok(Self::Version),
-            Some("install") => match (args.next(), args.next()) {
-                (Some(source), None) => GitHubSource::parse(&source).map(Self::Install),
-                _ => Err(ParseError::Usage),
-            },
+            Some("install") => {
+                let source = args.next().ok_or(ParseError::Usage)?;
+                let package = args.next();
+                if args.next().is_some() {
+                    return Err(ParseError::Usage);
+                }
+                InstallSource::parse(&source, package.as_deref(), registries).map(Self::Install)
+            }
+            Some(source) if source.starts_with("bitbucket.org:") && args.next().is_none() => {
+                InstallSource::parse(&action, None, registries).map(Self::Install)
+            }
             Some("use") => {
                 let command = args.next().ok_or(ParseError::Usage)?;
                 Ok(Self::Use(PluginCommand::parse(&command)?, args.collect()))
@@ -63,15 +78,16 @@ struct PluginCommand(String);
 impl PluginCommand {
     fn parse(argument: &OsStr) -> Result<Self, ParseError> {
         let name = argument.to_str().ok_or(ParseError::Command)?;
-        if name.starts_with(|character: char| character.is_ascii_lowercase())
-            && name
-                .bytes()
-                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        let filename = format!("{BINARY_PREFIX}{name}{MODULE_SUFFIX}");
+        let path = Path::new(&filename);
+        if name.is_empty()
+            || name.contains('\0')
+            || (cfg!(windows) && name.contains(':'))
+            || path.file_name() != Some(path.as_os_str())
         {
-            Ok(Self(name.to_owned()))
-        } else {
-            Err(ParseError::Command)
+            return Err(ParseError::Command);
         }
+        Ok(Self(name.to_owned()))
     }
 
     fn module_name(&self) -> String {
@@ -88,8 +104,12 @@ impl PluginCommand {
     }
 }
 
-pub(crate) fn run(args: impl Iterator<Item = OsString>, ui: Presentation) -> io::Result<u8> {
-    let result = match Request::parse(args) {
+pub(crate) fn run(
+    args: impl Iterator<Item = OsString>,
+    registries: &config::Registries,
+    ui: Presentation,
+) -> io::Result<u8> {
+    let result = match Request::parse(args, registries) {
         Ok(Request::Help) => return io::stdout().write_all(HELP.as_bytes()).map(|()| 0),
         Ok(Request::Version) => {
             return writeln!(io::stdout(), "gutil {}", env!("CARGO_PKG_VERSION")).map(|()| 0);
@@ -117,17 +137,17 @@ fn directory() -> io::Result<PathBuf> {
     Ok(home.join(".gutil").join("plugins"))
 }
 
-fn install(source: &GitHubSource) -> io::Result<u8> {
+fn install(source: &InstallSource) -> io::Result<u8> {
     let directory = directory()?;
     let staging = tempfile::tempdir()?;
     let mut cargo = Command::new("cargo");
     cargo
         .current_dir(staging.path())
-        .args(["install", "--locked", "--target", WASI_TARGET]);
-    source.configure_cargo(&mut cargo);
-    let status = cargo
+        .args(["install", "--locked", "--target", WASI_TARGET])
         .arg("--root")
-        .arg(staging.path())
+        .arg(staging.path());
+    source.configure_cargo(&mut cargo)?;
+    let status = cargo
         .status()
         .map_err(|error| io::Error::new(error.kind(), format!("cannot run cargo: {error}")))?;
     if !status.success() {
