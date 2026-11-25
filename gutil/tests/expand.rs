@@ -280,6 +280,8 @@ fn preserves_utf8_units_split_at_any_buffer_boundary() {
 fn writes_expanded_text_to_a_terminal() {
     use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, SetArg};
     use std::io::Read;
+    use std::sync::mpsc;
+    use std::time::Duration;
 
     let directory = tempfile::tempdir().unwrap();
     let pty = nix::pty::openpty(None, None).unwrap();
@@ -289,14 +291,21 @@ fn writes_expanded_text_to_a_terminal() {
     fs::write(directory.path().join("input"), b"\tx\n").unwrap();
     let result = command(directory.path(), "C")
         .arg("input")
-        .stdout(pty.slave)
+        .stdout(pty.slave.try_clone().unwrap())
         .output()
         .unwrap();
     assert!(result.status.success(), "{result:?}");
-    let mut terminal = fs::File::from(pty.master);
-    let mut bytes = [0; 10];
-    terminal.read_exact(&mut bytes).unwrap();
-    assert_eq!(&bytes, b"        x\n");
+    // Keep the slave open until the master has read the child output.
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let reader = std::thread::spawn(move || {
+        let mut terminal = fs::File::from(pty.master);
+        let mut bytes = [0; 10];
+        let _ = sender.send(terminal.read_exact(&mut bytes).map(|()| bytes));
+    });
+    let output = receiver.recv_timeout(Duration::from_secs(10));
+    drop(pty.slave);
+    reader.join().unwrap();
+    assert_eq!(&output.unwrap().unwrap(), b"        x\n");
 }
 
 #[test]
