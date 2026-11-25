@@ -85,7 +85,7 @@ fn execute(command: Command, options: &Options, ui: Presentation) -> io::Result<
         Command::Expand => Converter::Expand(Expander::new(options)),
         Command::Unexpand => Converter::Unexpand(Unexpander::new(options)),
     };
-    let utf8 = stream::utf8_locale();
+    let utf8 = crate::text::utf8_locale();
     let mut input_buffer = vec![0; stream::BUFFER_SIZE + 3];
     let stdout = io::stdout();
     let capacity = if stdout.is_terminal() {

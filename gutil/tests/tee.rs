@@ -137,6 +137,13 @@ fn wait(mut child: Child) -> Output {
     child.wait_with_output().unwrap()
 }
 
+fn closed_output() -> Stdio {
+    let (reader, writer) = std::io::pipe().unwrap();
+    // Close the receiver before spawn so even the first write sees a broken pipe.
+    drop(reader);
+    Stdio::from(writer)
+}
+
 #[test]
 fn closed_pipes_continue_or_exit_without_waiting_for_more_input() {
     for (mode, code, copies) in [
@@ -149,13 +156,12 @@ fn closed_pipes_continue_or_exit_without_waiting_for_more_input() {
         let root = fixture.path();
         let data = vec![42; 300_001];
         fs::write(root.join("input"), &data).unwrap();
-        let mut child = command(root, &[&format!("--output-error={mode}"), "good"])
+        let child = command(root, &[&format!("--output-error={mode}"), "good"])
             .stdin(fs::File::open(root.join("input")).unwrap())
-            .stdout(Stdio::piped())
+            .stdout(closed_output())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        drop(child.stdout.take());
         let output = wait(child);
         assert_eq!(output.status.code(), Some(code), "{mode}: {output:?}");
         assert_eq!(
@@ -165,11 +171,10 @@ fn closed_pipes_continue_or_exit_without_waiting_for_more_input() {
 
         let mut child = command(root, &[&format!("--output-error={mode}")])
             .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
+            .stdout(closed_output())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        drop(child.stdout.take());
         let mut stdin = child.stdin.take().unwrap();
         stdin.write_all(b"data").unwrap();
         // Keep stdin open: with no live outputs, tee must not await EOF.
@@ -185,11 +190,10 @@ fn default_broken_pipe_terminates_the_command() {
     let fixture = tempfile::tempdir().unwrap();
     let mut child = command(fixture.path(), &[])
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
+        .stdout(closed_output())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    drop(child.stdout.take());
     let mut stdin = child.stdin.take().unwrap();
     stdin.write_all(b"data").unwrap();
     let output = wait(child);

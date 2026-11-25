@@ -2,7 +2,8 @@ use std::io::{self, Write};
 
 use super::options::Options;
 use super::stops::{advance, Stops};
-use super::stream::{display_width, horizontal_blank};
+use super::stream::display_width;
+use crate::text::horizontal_blank;
 
 const TABS: [u8; 1024] = [b'\t'; 1024];
 

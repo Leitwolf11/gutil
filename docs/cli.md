@@ -799,3 +799,28 @@ relations to finish the ordering, and exits with status 1. Its selection
 of relations to remove uses depth-first traversal, so cyclic inputs can
 produce a different order and diagnostics from GNU tsort. Progress
 reports bytes read and goes to stderr.
+
+## cut
+
+`gutil cut [OPTIONS] [FILE]...` selects byte positions with `-b LIST`,
+character positions with `-c LIST`, or fields with `-f LIST`. A list may
+contain individual positions, closed ranges, and ranges with one open
+end. Positions start at one. Overlapping selections emit each position
+once. `--complement` selects the positions outside the list.
+
+Fields are tab-separated by default. Use `-d CHAR` for a different
+delimiter, `-w` for runs of horizontal blanks, or
+`--whitespace-delimited=trimmed` to ignore leading and trailing blanks.
+`-F LIST` selects blank-separated fields and uses spaces in the output.
+`-s` skips records that have no field separator. `-O STRING` sets the
+output separator between fields or byte and character ranges. An empty
+input or output delimiter denotes NUL.
+
+`-z` changes the record terminator to NUL. UTF-8 locales count complete
+scalars for `-c` and treat each malformed byte as one unit. In UTF-8
+byte mode, `-n` emits a character when its selected bytes form a
+contiguous suffix of that character. Other locales use byte positions.
+
+Use `-` or omit paths for standard input. Operands are processed in
+order. A failed input is reported on stderr and later operands are
+still processed. Progress reports bytes read on stderr.
